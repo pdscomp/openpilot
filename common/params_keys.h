@@ -144,6 +144,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"UptimeOffroad", {PERSISTENT, FLOAT, "0.0"}},
     {"UptimeOnroad", {PERSISTENT, FLOAT, "0.0"}},
     {"Version", {PERSISTENT, STRING}},
+<<<<<<< HEAD
 
     // StarPilot variables
     {"AccelerationPath", {PERSISTENT, BOOL, "1", "0", 2}},
@@ -642,4 +643,10 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"WheelIcon", {PERSISTENT, STRING, "stock", "stock", 0}},
     {"WheelSpeed", {PERSISTENT, BOOL, "0", "0", 2}},
     {"WheelToDownload", {CLEAR_ON_MANAGER_START, STRING, "", ""}},
+    {"TorqueInterceptorEnabled", {PERSISTENT, BOOL}},
+    {"RadarInterceptorEnabled", {PERSISTENT, BOOL}},
+    {"NoMRCC", {PERSISTENT, BOOL}},
+    {"NoFSC", {PERSISTENT, BOOL}},
+    {"BlendedACC", {PERSISTENT, BOOL}},
+    {"ManualTransmission", {PERSISTENT, BOOL}},
 };
