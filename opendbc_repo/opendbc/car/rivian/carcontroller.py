@@ -59,7 +59,7 @@ class CarController(CarControllerBase, MadsCarController):
     can_sends.append(create_lka_steering(self.packer, self.frame, CS.acm_lka_hba_cmd, send_torque, CC.enabled, CC.latActive, self.mads, lka_act_toi))
 
     if self.frame % 5 == 0 and not (self.CP.flags & RivianFlags.GEN2):
-      can_sends.append(create_wheel_touch(self.packer, CS.sccm_wheel_touch, CC.enabled))
+      can_sends.append(create_wheel_touch(self.packer, CS.sccm_wheel_touch, self.mads.lat_active))
 
     # Longitudinal control
     if self.CP.openpilotLongitudinalControl:
