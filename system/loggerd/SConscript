@@ -13,6 +13,10 @@ if arch != "larch64":
     frameworks += ['VideoToolbox', 'CoreMedia', 'CoreFoundation', 'CoreVideo']
   else:
     libs += ['va', 'va-drm', 'drm']
+else:
+  # AGNOS's libavutil now drags in VA-API/Vulkan hwcontext; link libva so loggerd's avformat/avcodec/
+  # avutil (container muxing) link resolves on the device. VA-API is never exercised on the QC encoder.
+  libs += ['va', 'va-drm', 'drm']
 
 if arch == "Darwin":
   # exclude v4l
