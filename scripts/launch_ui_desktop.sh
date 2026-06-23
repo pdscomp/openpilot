@@ -222,8 +222,7 @@ for d in "${ROOT_DIR}"/*_repo; do [[ -d "$d" ]] && export PYTHONPATH="${PYTHONPA
 [[ -d "${ROOT_DIR}/third_party/acados" ]] && export PYTHONPATH="${PYTHONPATH}:${ROOT_DIR}/third_party/acados"
 export OPENPILOT_ZMQ_NAMESPACE="${OPENPILOT_ZMQ_NAMESPACE:-desktop-c3-$$}"
 
-export SP_DISABLE_AUTO_DEVICE_SCONS=1
-scons -j"${jobs}" selfdrive/ui/ui
+scons --cache-disable -j"${jobs}" selfdrive/ui/ui common/params_pyx.so common/transformations/transformations.so msgq_repo/msgq/ipc_pyx.so msgq_repo/msgq/visionipc/visionipc_pyx.so
 
 cp -f "${ROOT_DIR}/selfdrive/ui/ui" "${HOST_UI}"
 cleanup

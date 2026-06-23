@@ -7,6 +7,7 @@ from openpilot.selfdrive.modeld.constants import ModelConstants
 from openpilot.common.filter_simple import FirstOrderFilter
 from opendbc.car.gm.values import CarControllerParams, GMFlags
 from openpilot.starpilot.common.testing_grounds import testing_ground
+from openpilot.common.params import Params
 
 CONTROL_N_T_IDX = ModelConstants.T_IDXS[:CONTROL_N]
 clip = np.clip
@@ -113,6 +114,9 @@ class LongControl:
     self.CP = CP
     self.long_control_state = LongCtrlState.off
     self.experimental_mode = False
+    self.experimental_mode_last = False
+    self.params = Params()
+    self.params_memory = Params("/dev/shm/params")
     self.pid = PIDController((CP.longitudinalTuning.kpBP, CP.longitudinalTuning.kpV),
                              (CP.longitudinalTuning.kiBP, CP.longitudinalTuning.kiV),
                              rate=1 / DT_CTRL)
@@ -292,6 +296,12 @@ class LongControl:
                                                        should_stop, CS.brakePressed,
                                                        CS.cruiseState.standstill, starpilot_toggles,
                                                        allow_stopping_release=allow_stopping_release)
+
+    if self.params.get_bool("BlendedACC"):
+      experimental_mode = self.params_memory.get_int("CEStatus") # 0 means experimental mode is off
+      if experimental_mode and not self.experimental_mode_last:
+        self.reset()
+      self.experimental_mode_last = experimental_mode
     if self.long_control_state == LongCtrlState.off:
       self.reset()
       output_accel = 0.

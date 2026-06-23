@@ -22,6 +22,7 @@ class StarPilotCarState:
     isTorqueCar: bool = False
     isTSK: bool = False
     isHKGCanFd: bool = False
+    isMazda: bool = False
     
     # ========== Car Capabilities ==========
     hasBSM: bool = False
@@ -90,6 +91,7 @@ class StarPilotState:
             self.car_state.isHKG = brand == "hyundai"
             self.car_state.isSubaru = brand == "subaru"
             self.car_state.isToyota = brand == "toyota"
+            self.car_state.isMazda = brand == "mazda"
             self.car_state.isHKGCanFd = False
             self.car_state.hasModeStarButtons = False
             self.car_state.isBolt = False
@@ -163,6 +165,7 @@ class StarPilotState:
             self.car_state.isHKGCanFd = self.car_state.isHKG and safety_model == car.CarParams.SafetyModel.hyundaiCanfd
             self.car_state.isSubaru = car_make == "subaru"
             self.car_state.isToyota = car_make == "toyota"
+            self.car_state.isMazda = car_make == "mazda"
             self.car_state.isTSK = bool(self._safe_get(CP, "secOcRequired", False))
             self.car_state.isVolt = car_fingerprint.startswith("CHEVROLET_VOLT")
             
