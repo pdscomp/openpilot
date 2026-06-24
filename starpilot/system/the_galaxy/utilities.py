@@ -2322,15 +2322,48 @@ def _read_cpu_temp_c(thermal_root=None):
   return round(max(values)) if values else None
 
 
+def _read_power_draw_w():
+  try:
+    from openpilot.system.hardware import HARDWARE
+    val = HARDWARE.get_current_power_draw()
+    if val is not None:
+      return round(float(val), 1)
+  except Exception:
+    pass
+  return None
+
+
+def _read_device_state_power_metrics():
+  try:
+    from cereal import messaging
+    if hasattr(messaging, "sub_sock") and hasattr(messaging, "recv_sock"):
+      sock = messaging.sub_sock("deviceState", conflate=True, timeout=50)
+      if sock is not None:
+        msg = messaging.recv_sock(sock, wait=False)
+        if msg is not None and hasattr(msg, "deviceState"):
+          return {
+            "powerUsedUwh": getattr(msg.deviceState, "offroadPowerUsageUwh", None),
+            "carBatteryCapacityUwh": getattr(msg.deviceState, "carBatteryCapacityUwh", None),
+          }
+  except Exception:
+    pass
+  return {"powerUsedUwh": None, "carBatteryCapacityUwh": None}
+
+
 def _build_device_summary(params_obj):
   is_onroad = _params_get_bool(params_obj, "IsOnroad")
   uptime_seconds = _read_uptime_seconds()
   cpu_temp_c = _read_cpu_temp_c()
+  power_draw_w = _read_power_draw_w()
+  power_metrics = _read_device_state_power_metrics()
   return {
     "status": "Driving" if is_onroad else "Parked",
     "online": True,
     "uptimeSeconds": uptime_seconds,
     "cpuTempC": cpu_temp_c,
+    "powerDrawW": power_draw_w,
+    "powerUsedUwh": power_metrics["powerUsedUwh"],
+    "carBatteryCapacityUwh": power_metrics["carBatteryCapacityUwh"],
   }
 
 
