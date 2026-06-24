@@ -105,6 +105,41 @@ TogglesPanel::TogglesPanel(SettingsWindow *parent) : ListWidget(parent) {
       "../assets/icons/metric.png",
       false,
     },
+    {
+      "TorqueInterceptorEnabled",
+      tr("Enable Torque Interceptor"),
+      tr("Enable the torque interceptor to control the steering wheel."),
+      "../assets/icons/chffr_wheel.png",
+      true,
+    },
+    {
+      "RadarInterceptorEnabled",
+      tr("Enable Radar Interceptor"),
+      tr("Enable if you have installed the radar Interceptor."),
+      "../assets/icons/chffr_wheel.png",
+      true,
+    },
+    {
+      "NoMRCC",
+      tr("Disable Stock MRCC"),
+      tr("Enable if your car does not have stock MRCC."),
+      "../assets/icons/chffr_wheel.png",
+      true,
+    },
+    {
+      "NoFSC",
+      tr("Disable Stock FSC"),
+      tr("Enable if your car does not have stock FSC."),
+      "../assets/icons/chffr_wheel.png",
+      true,
+    },
+    {
+      "ManualTransmission",
+      tr("Manual Transmission"),
+      tr("Enable if your car has a manual transmission."),
+      "../assets/icons/chffr_wheel.png",
+      true,
+    },
   };
 
 
