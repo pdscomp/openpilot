@@ -36,17 +36,36 @@ DeveloperPanel::DeveloperPanel(SettingsWindow *parent) : QFrame(parent) {
 
   joystickToggle = new ParamControl("JoystickDebugMode", tr("Joystick Debug Mode"), "", "");
   QObject::connect(joystickToggle, &ParamControl::toggleFlipped, [=](bool state) {
-    params.putBool("LongitudinalManeuverMode", false);
-    longManeuverToggle->refresh();
+    if (state) {
+      params.putBool("LongitudinalManeuverMode", false);
+      params.putBool("LateralManeuverMode", false);
+      longManeuverToggle->refresh();
+      latManeuverToggle->refresh();
+    }
   });
   mainList->addItem(joystickToggle);
 
   longManeuverToggle = new ParamControl("LongitudinalManeuverMode", tr("Longitudinal Maneuver Mode"), "", "");
   QObject::connect(longManeuverToggle, &ParamControl::toggleFlipped, [=](bool state) {
-    params.putBool("JoystickDebugMode", false);
-    joystickToggle->refresh();
+    if (state) {
+      params.putBool("JoystickDebugMode", false);
+      params.putBool("LateralManeuverMode", false);
+      joystickToggle->refresh();
+      latManeuverToggle->refresh();
+    }
   });
   mainList->addItem(longManeuverToggle);
+
+  latManeuverToggle = new ParamControl("LateralManeuverMode", tr("Lateral Maneuver Mode"), "", "");
+  QObject::connect(latManeuverToggle, &ParamControl::toggleFlipped, [=](bool state) {
+    if (state) {
+      params.putBool("JoystickDebugMode", false);
+      params.putBool("LongitudinalManeuverMode", false);
+      joystickToggle->refresh();
+      longManeuverToggle->refresh();
+    }
+  });
+  mainList->addItem(latManeuverToggle);
 
   experimentalLongitudinalToggle = new ParamControl(
     "AlphaLongitudinalEnabled",
