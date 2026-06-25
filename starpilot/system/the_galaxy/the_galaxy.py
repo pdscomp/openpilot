@@ -3284,12 +3284,15 @@ def _load_longitudinal_maneuver_status():
   status = _default_longitudinal_maneuver_status()
   raw = params.get("LongitudinalManeuverStatus", encoding="utf-8") or ""
   if raw:
-    try:
-      payload = json.loads(raw)
-      if isinstance(payload, dict):
-        status.update(payload)
-    except Exception:
-      pass
+    if isinstance(raw, dict):
+      status.update(raw)
+    else:
+      try:
+        payload = json.loads(raw)
+        if isinstance(payload, dict):
+          status.update(payload)
+      except Exception:
+        pass
 
   history = status.get("history")
   if not isinstance(history, list):
@@ -3310,7 +3313,7 @@ def _save_longitudinal_maneuver_status(status):
     history = []
   status_copy["history"] = [str(line) for line in history if str(line).strip()][-120:]
   status_copy["updatedAtSec"] = float(status_copy.get("updatedAtSec") or time.monotonic())
-  params.put("LongitudinalManeuverStatus", json.dumps(status_copy, separators=(",", ":")))
+  params.put("LongitudinalManeuverStatus", status_copy)
   return status_copy
 
 def _append_longitudinal_maneuver_history(status, line):
@@ -3412,12 +3415,15 @@ def _load_lateral_maneuver_status():
   status = _default_lateral_maneuver_status()
   raw = params.get("LateralManeuverStatus", encoding="utf-8") or ""
   if raw:
-    try:
-      payload = json.loads(raw)
-      if isinstance(payload, dict):
-        status.update(payload)
-    except Exception:
-      pass
+    if isinstance(raw, dict):
+      status.update(raw)
+    else:
+      try:
+        payload = json.loads(raw)
+        if isinstance(payload, dict):
+          status.update(payload)
+      except Exception:
+        pass
 
   history = status.get("history")
   if not isinstance(history, list):
@@ -3439,7 +3445,7 @@ def _save_lateral_maneuver_status(status):
     history = []
   status_copy["history"] = [str(line) for line in history if str(line).strip()][-120:]
   status_copy["updatedAtSec"] = float(status_copy.get("updatedAtSec") or time.monotonic())
-  params.put("LateralManeuverStatus", json.dumps(status_copy, separators=(",", ":")))
+  params.put("LateralManeuverStatus", status_copy)
   return status_copy
 
 
