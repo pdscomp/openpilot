@@ -34,7 +34,16 @@ class CarStateExt:
     self.decrease_counter = 0
     self.vdm_user_adas_request = 0
     self._lkas_pending = False
-    self.steering_mode_on_brake = read_steering_mode_param(CP, CP_SP, Params())
+    # First-ever drive on this device: seed the Rivian default of DISENGAGE.
+    # CarParamsPersistent is written by card.py AFTER the CarInterface (and so this constructor) is built, and it has
+    # no registered default, so manager_init's "fill unset params with their default" loop never touches it. It is
+    # therefore unset only on a device that has never completed a drive, which is the one moment we can be sure the
+    # user has never had a MadsSteeringMode to lose. Also guarded on the value still being the stock default, so a
+    # choice made in settings while parked, before that first drive, is not overwritten either.
+    params = Params()
+    if params.get("CarParamsPersistent") is None and params.get("MadsSteeringMode", return_default=True) == MadsSteeringModeOnBrake.REMAIN_ACTIVE:
+      params.put("MadsSteeringMode", MadsSteeringModeOnBrake.DISENGAGE, block=True)
+    self.steering_mode_on_brake = read_steering_mode_param(CP, CP_SP, params)
 
     self._resume_enabled: bool = Params().get_bool("RivianResumeEnabled")
     self.last_active_set_speed: float | None = None
