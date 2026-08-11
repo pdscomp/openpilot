@@ -18,6 +18,8 @@ def checksum(msg):
     ret[0] = _checksum(ret[1:], 0x1D, 0xB1)
   elif addr == 0x150:
     ret[0] = _checksum(ret[1:], 0x1D, 0x9A)
+  elif addr == 0x162:
+    ret[0] = _checksum(ret[1:], 0x1D, 0xD1)
 
   return addr, ret, bus
 
@@ -111,6 +113,24 @@ class TestRivianSafetyBase(common.CarSafetyTest, common.DriverTorqueSteeringSafe
         msg[0].data[0] = 0xff
         self.assertFalse(self._rx(msg))
         self.assertFalse(self.safety.get_controls_allowed())
+
+  cnt_stalk = 0
+
+  def _stalk_msg(self, req):
+    values = {"VDM_UserAdasRequest": req, "VDM_AdasSts_Counter": self.cnt_stalk % 15}
+    self.__class__.cnt_stalk += 1
+    return self.packer.make_can_msg_safety("VDM_AdasSts", 0, values, fix_checksum=checksum)
+
+  def test_mads_button_gated_on_cruise(self):
+    """UP_1 counts as the MADS button only while stock ACC is NOT engaged: with ACC active
+    python treats UP_1 as cancel-only, and counting it in the panda desyncs the two MADS
+    state machines (root cause of the EPAS AngleControlCntr fault, route c17ea97d.../6 seg 3)."""
+    for cruise in (False, True):
+      self._rx(self._pcm_status_msg(1 if cruise else 0))
+      self._rx(self._stalk_msg(1))
+      expected = 0 if cruise else 1  # MADS_BUTTON_NOT_PRESSED / MADS_BUTTON_PRESSED
+      self.assertEqual(self.safety.get_mads_button_press(), expected, f"cruise={cruise}")
+      self._rx(self._stalk_msg(0))
 
 
 class TestRivianStockSafety(TestRivianSafetyBase):
