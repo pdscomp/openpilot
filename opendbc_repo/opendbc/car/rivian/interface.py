@@ -39,6 +39,8 @@ class CarInterface(CarInterfaceBase):
     # planner under-anticipates the VDM. 0.2 tightens anticipation (smoother) while staying well under
     # xnor's conservative 0.5 to keep AP's responsive feel. Fall back to 0.15 if it feels laggy on lead-brake.
     ret.longitudinalActuatorDelay = 0.2
+    # Upstream dropped vEgoStopping in ae445c9b (back to the 0.5 default); AP keeps 0.25, which our
+    # stop-transition tuning was validated against.
     ret.vEgoStopping = 0.25
     ret.stopAccel = -0.2
     ret.longitudinalTuning.kiBP = [0.]
