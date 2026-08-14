@@ -69,6 +69,29 @@ fi
 
 poetry self add poetry-dotenv-plugin@^0.1.0
 
+# aarch64: pyopencl has no prebuilt wheel, and its PEP 517 isolated build env installs
+# numpy 2.x while its include probe still points at the numpy-1.x core/ path, so the
+# source build fails ('numpy/arrayobject.h: No such file or directory'). Pre-install it
+# without build isolation against numpy 1.x so poetry sees it satisfied and skips the
+# broken isolated build. Target python depends on poetry's venv mode:
+#   POETRY_VIRTUALENVS_CREATE=false (Docker base image) -> active pyenv python
+#   otherwise (native runner)                         -> $ROOT/.venv
+if [ "$(uname -m)" = "aarch64" ]; then
+  if [ "${POETRY_VIRTUALENVS_CREATE:-}" = "false" ]; then
+    PIP="python -m pip"
+  else
+    python -m venv "$ROOT/.venv"
+    PIP="$ROOT/.venv/bin/pip"
+  fi
+  $PIP install --no-cache "numpy<2" pybind11 wheel setuptools
+  # CL_UNORM_INT24 was removed from 2024+ OpenCL headers; pyopencl 2023.1.4 still
+  # exposes it. Re-define ONLY when the system header lacks it (a -D macro would
+  # break focal's cl.h, which declares it as an enum).
+  SEED_CPPFLAGS=""
+  grep -q CL_UNORM_INT24 /usr/include/CL/cl.h 2>/dev/null || SEED_CPPFLAGS="-DCL_UNORM_INT24=0x10DF"
+  CPPFLAGS="$SEED_CPPFLAGS" $PIP install --no-cache --no-build-isolation --no-deps pyopencl==2023.1.4
+fi
+
 echo "pip packages install..."
 poetry install --no-cache --no-root
 pyenv rehash

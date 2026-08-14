@@ -181,6 +181,16 @@ function launch {
   ln -sfn $(pwd) /data/pythonpath
   export PYTHONPATH="$DIR/frogpilot/third_party:$PWD"
 
+  # reassemble model blobs that were split for GitHub's 100MB push limit (prebuilt only)
+  for part in "$PWD"/frogpilot/tinygrad_modeld/models/*.part-aa; do
+    [ -e "$part" ] || continue
+    target="${part%.part-aa}"
+    if [ ! -f "$target" ]; then
+      echo "[prebuilt] reassembling $(basename "$target")"
+      cat "$target".part-* > "$target"
+    fi
+  done
+
   # hardware specific init
   if [ -f /AGNOS ]; then
     agnos_init

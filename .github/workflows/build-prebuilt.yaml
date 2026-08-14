@@ -1,0 +1,55 @@
+name: build-prebuilt
+
+on:
+  push:
+    branches: [paul/mazda-frogpilot]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: prebuilt-${{ github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - run: git lfs pull
+      - name: Set up docker buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Cache scons
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/.scons_cache
+          key: scons-arm64-${{ github.ref_name }}-${{ github.sha }}
+          restore-keys: |
+            scons-arm64-${{ github.ref_name }}-
+            scons-arm64-
+      - name: Build pinned focal base image (native arm64)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.openpilot_base
+          platforms: linux/arm64
+          load: true
+          tags: openpilot-base:focal-arm
+          cache-from: type=gha,scope=focal-arm-base
+          cache-to: type=gha,mode=max,scope=focal-arm-base
+      - name: Build and publish prebuilt branch (inside pinned container)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          docker run --rm --user root \
+            -e GITHUB_TOKEN -e GITHUB_REPOSITORY \
+            -e SCONS_CACHE_DIR=/tmp/scons_cache \
+            -v $PWD:/tmp/openpilot -w /tmp/openpilot \
+            -v $GITHUB_WORKSPACE/.scons_cache:/tmp/scons_cache \
+            openpilot-base:focal-arm \
+            bash -c "apt-get update -qq && apt-get install -y -qq rsync >/dev/null && git config --global --add safe.directory /tmp/openpilot && BRANCH=paul-mazda-frogpilot release/build_prebuilt_ci.sh"
