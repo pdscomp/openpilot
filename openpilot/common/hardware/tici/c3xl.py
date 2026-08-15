@@ -60,6 +60,20 @@ def is_c3xl(model: str | None = None, params=None) -> bool:
   return model == "tici" and _read_mode(_get_params(params)) == 1
 
 
+def latch_c3xl_runtime(model: str | None = None, params=None) -> bool:
+  """Freeze the exact C3XL force for one manager lifetime."""
+  params = _get_params(params)
+  active = is_c3xl(model, params)
+  params.put_bool("HardwareC3XLRuntimeMode", active, block=True)
+  return active
+
+
+def is_c3xl_runtime(model: str | None = None, params=None) -> bool:
+  """Return the manager-latched C3XL topology for exact tici hardware only."""
+  model = _normalize_model(model if model is not None else read_device_model())
+  return model == "tici" and _get_params(params).get_bool("HardwareC3XLRuntimeMode")
+
+
 def _decision(result: str, model: str, *, active: bool = False, samples: int = 0,
               snapshot: PandaSnapshot | None = None, snapshots: list[PandaSnapshot] | None = None,
               reason: str = "") -> dict[str, Any]:
