@@ -144,6 +144,8 @@ class TestParams:
     bool_keys = {
       "KonikLockout",
       "KonikInterlock",
+      "TorqueInterceptorEnabled",
+      "TorqueInterceptorEnableRequest",
     }
     string_keys = {"CommaDongleId", "KonikDongleId"}
     persistent_keys = set(self.params.all_keys(ParamKeyFlag.PERSISTENT))
@@ -171,6 +173,8 @@ class TestParams:
     security_keys = {
       b"KonikLockout",
       b"KonikInterlock",
+      b"TorqueInterceptorEnabled",
+      b"TorqueInterceptorEnableRequest",
       b"CommaDongleId",
       b"KonikDongleId",
       b"SunnylinkUploadQueue",

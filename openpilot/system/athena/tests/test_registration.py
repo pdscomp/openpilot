@@ -13,7 +13,7 @@ class TestRegistration:
 
   def setup_method(self):
     self.params = Params()
-    for key in ("DongleId", "CommaDongleId", "KonikDongleId", "UseKonikServer", "KonikLockout", "KonikInterlock"):
+    for key in ("DongleId", "CommaDongleId", "KonikDongleId", "UseKonikServer", "KonikLockout", "KonikInterlock", "TorqueInterceptorEnabled"):
       self.params.remove(key)
 
     persist_dir = Path(Paths.persist_root()) / "comma"

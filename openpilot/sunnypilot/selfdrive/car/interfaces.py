@@ -8,6 +8,7 @@ from typing import Any
 
 from opendbc.car import structs
 from opendbc.car.interfaces import CarInterfaceBase
+from opendbc.car.mazda.values import MazdaFlags
 from openpilot.common.params import Params
 from openpilot.common.swaglog import cloudlog
 from openpilot.sunnypilot.selfdrive.controls.lib.nnlc.helpers import get_nn_model_path
@@ -28,15 +29,14 @@ def log_fingerprint(CP: structs.CarParams) -> None:
 def _seed_mazda_torque_defaults(CP: structs.CarParams, params: Params = None) -> None:
   """One-time: default the full torque-control stack ON for steer-to-zero Mazdas (2022+ CX-5 EPS).
 
-  Gated on the EPS, not the model: minSteerSpeed == 0 is the same "CX-5 2022+ EPS present" proxy
-  used by the steering tune (values.py) and carstate, so the CX-9 sharing this EPS and EPS swaps
-  are covered. Seeded once via a marker param so the user can still toggle any of these off later.
+  Gated on the EPS flag, not minSteerSpeed: TI1 also permits zero-speed steering but must retain
+  its own conservative tune. Seeded once via a marker so the user can still disable these later.
   TorqueControlTune defaults to 0.0 (== torque learner v0), so it needs no seeding here.
   """
   if params is None:
     params = Params()
 
-  if CP.brand != "mazda" or CP.minSteerSpeed > 0:
+  if CP.brand != "mazda" or not (CP.flags & MazdaFlags.STEER_TO_ZERO):
     return
   if params.get_bool("MazdaTorqueDefaultsApplied"):
     return
@@ -136,6 +136,11 @@ def initialize_params(params) -> list[dict[str, Any]]:
   # hyundai
   keys.extend([
     "HyundaiLongitudinalTuning",
+  ])
+
+  # mazda
+  keys.extend([
+    "TorqueInterceptorEnabled",
   ])
 
   # subaru

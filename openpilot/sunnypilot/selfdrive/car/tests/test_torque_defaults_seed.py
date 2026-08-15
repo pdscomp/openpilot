@@ -2,6 +2,7 @@
 """Tests for the one-time steer-to-zero Mazda torque-control default seeding."""
 
 from opendbc.car.structs import car
+from opendbc.car.mazda.values import MazdaFlags
 
 from openpilot.sunnypilot.selfdrive.car.interfaces import _seed_mazda_torque_defaults
 
@@ -23,17 +24,19 @@ class FakeParams:
 
 
 def _cx5_eps_cp():
-  # steer-to-zero: 2022+ CX-5 EPS present -> minSteerSpeed == 0
-  return CarParams(brand="mazda", minSteerSpeed=0.0)
+  return CarParams(brand="mazda", flags=MazdaFlags.STEER_TO_ZERO.value)
 
 
 def _pre_2022_mazda_cp():
-  # no CX-5 EPS -> low-speed lockout, minSteerSpeed > 0
-  return CarParams(brand="mazda", minSteerSpeed=12.5)
+  return CarParams(brand="mazda")
 
 
 def _non_mazda_cp():
-  return CarParams(brand="toyota", minSteerSpeed=0.0)
+  return CarParams(brand="toyota", flags=MazdaFlags.STEER_TO_ZERO.value)
+
+
+def _ti_cp():
+  return CarParams(brand="mazda", flags=MazdaFlags.TORQUE_INTERCEPTOR.value, minSteerSpeed=0.0)
 
 
 class TestMazdaTorqueDefaultsSeed:
@@ -54,6 +57,13 @@ class TestMazdaTorqueDefaultsSeed:
   def test_non_mazda_not_seeded(self):
     params = FakeParams()
     _seed_mazda_torque_defaults(_non_mazda_cp(), params)
+    for key in SEEDED_KEYS:
+      assert params.get_bool(key) is False
+    assert params.get_bool("MazdaTorqueDefaultsApplied") is False
+
+  def test_ti_zero_speed_does_not_seed_steer_to_zero_defaults(self):
+    params = FakeParams()
+    _seed_mazda_torque_defaults(_ti_cp(), params)
     for key in SEEDED_KEYS:
       assert params.get_bool(key) is False
     assert params.get_bool("MazdaTorqueDefaultsApplied") is False
