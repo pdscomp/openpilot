@@ -10,7 +10,7 @@ def get_sunnylink_status(params=None) -> tuple[bool, bool, bool]:
   """Get the status of Sunnylink on the device. Returns a tuple of (is_sunnylink_enabled, is_registered)."""
   params = params or Params()
   is_sunnylink_enabled = params.get_bool("SunnylinkEnabled")
-  is_registered = params.get("SunnylinkDongleId") not in (None, UNREGISTERED_SUNNYLINK_DONGLE_ID)
+  is_registered = params.get("SunnylinkDongleId") not in (None, "", UNREGISTERED_SUNNYLINK_DONGLE_ID)
   is_on_temporary_fault = params.get_bool("SunnylinkTempFault")
   return is_sunnylink_enabled, is_registered, is_on_temporary_fault
 

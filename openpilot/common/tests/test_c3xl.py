@@ -3,7 +3,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from openpilot.common.params import ParamKeyFlag, ParamKeyType, Params
-from openpilot.common.hardware.tici.c3xl import classify_c3xl, diagnose_c3xl, is_c3xl, probe_usb_pandas
+from openpilot.common.hardware.tici.c3xl import classify_c3xl, diagnose_c3xl, is_c3xl, is_c3xl_runtime, latch_c3xl_runtime, probe_usb_pandas
 
 
 F4 = {"serial": "f4", "transport": "usb", "mcu": "f4", "bootstub": False}
@@ -23,6 +23,8 @@ def test_params_are_local_non_backup_controls(tmp_path):
   assert params.get_type("HardwareC3XLEvidence") == ParamKeyType.JSON
   assert b"HardwareC3XLMode" not in params.all_keys(ParamKeyFlag.BACKUP)
   assert b"HardwareC3XLEvidence" not in params.all_keys(ParamKeyFlag.BACKUP)
+  assert b"HardwareC3XLRuntimeMode" not in params.all_keys(ParamKeyFlag.BACKUP)
+  assert b"HardwareC3XLRuntimeMode" in params.all_keys(ParamKeyFlag.CLEAR_ON_MANAGER_START)
   keys_source = (Path(__file__).parents[1] / "params_keys.h").read_text()
   assert '{"HardwareC3XLEvidence", {PERSISTENT | DONT_LOG, JSON, "{}"}}' in keys_source
 
@@ -40,6 +42,20 @@ def test_manual_mode_is_tici_only_and_environment_is_ignored(tmp_path, monkeypat
   assert not is_c3xl("foo comma tici", params)
   assert is_c3xl("comma tici", params)
   assert is_c3xl("\ttici\t", params)
+
+
+def test_runtime_mode_is_manager_latched(tmp_path):
+  params = Params(str(tmp_path))
+  params.put("HardwareC3XLMode", 1, block=True)
+  assert latch_c3xl_runtime("tici", params)
+  assert is_c3xl_runtime("tici", params)
+
+  params.put("HardwareC3XLMode", 0, block=True)
+  assert is_c3xl_runtime("tici", params)
+  assert not is_c3xl_runtime("tizi", params)
+
+  assert not latch_c3xl_runtime("tici", params)
+  assert not is_c3xl_runtime("tici", params)
 
 
 def test_model_is_normalized_once_at_policy_boundary(tmp_path, monkeypatch):

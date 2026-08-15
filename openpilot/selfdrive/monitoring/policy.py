@@ -466,3 +466,13 @@ class DriverMonitoring:
       lowspeed=lowspeed,
       wrong_gear=wrong_gear,
     )
+
+  def run_wheeltouch_step(self, sm):
+    car_speed = sm['carState'].vEgo
+    enabled = sm['selfdriveState'].enabled or sm['carControl'].latActive
+    wrong_gear = sm['carState'].gearShifter not in (car.CarState.GearShifter.drive, car.CarState.GearShifter.low)
+    lowspeed = car_speed < self.settings._ALERT_MIN_SPEED
+    driver_engaged = sm['carState'].steeringPressed or (sm['selfdriveState'].enabled and sm['carState'].gasPressed)
+
+    self._set_policy(MonitoringPolicy.wheeltouch)
+    self._update_events(driver_engaged, enabled, lowspeed, wrong_gear)

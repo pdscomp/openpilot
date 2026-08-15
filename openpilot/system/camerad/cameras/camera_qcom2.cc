@@ -251,7 +251,7 @@ void camerad_thread() {
 
   VisionIpcServer v("camerad");
   Params params;
-  const bool c3xl = Hardware::get_name() == "tici" && params.get("HardwareC3XLMode") == "1";
+  const bool c3xl = Hardware::get_name() == "tici" && params.get("HardwareC3XLRuntimeMode") == "1";
 
   // *** initial ISP init ***
   SpectraMaster m;

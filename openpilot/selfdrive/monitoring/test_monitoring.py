@@ -275,3 +275,12 @@ def test_run_step_engagement(selfdrive_enabled, lat_active, steering, gas,
   dm.run_step(sm, demo=False)
   assert captured['op_engaged'] == expected_op_engaged
   assert captured['driver_engaged'] == expected_driver_engaged
+
+
+def test_wheeltouch_step_needs_no_driver_camera_model():
+  sm = _build_sm(True, False, True, False)
+  del sm['driverStateV2']
+  dm = DriverMonitoring()
+  dm.run_wheeltouch_step(sm)
+  assert dm.active_policy == log.DriverMonitoringState.MonitoringPolicy.wheeltouch
+  assert dm.driver_interacting

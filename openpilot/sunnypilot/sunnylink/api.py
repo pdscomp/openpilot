@@ -67,14 +67,17 @@ class SunnylinkApi(BaseApi):
 
     sunnylink_dongle_id, comma_dongle_id = self._resolve_dongle_ids()
 
-    if comma_dongle_id is None:
+    if comma_dongle_id in (None, "", UNREGISTERED_SUNNYLINK_DONGLE_ID):
       self._status_update("Comma dongle ID not found, deferring sunnylink's registration to comma's registration process.")
       return None
 
     imei1, imei2 = self._resolve_imeis()
+    if not imei1:
+      self._status_update("IMEI not found, deferring Sunnylink registration.")
+      return None
     serial = self._resolve_serial()
 
-    if sunnylink_dongle_id not in (None, UNREGISTERED_SUNNYLINK_DONGLE_ID):
+    if sunnylink_dongle_id not in (None, "", UNREGISTERED_SUNNYLINK_DONGLE_ID):
       return sunnylink_dongle_id
 
     jwt_algo, private_key, public_key = BaseApi.get_key_pair()
@@ -137,7 +140,8 @@ class SunnylinkApi(BaseApi):
           time.sleep(3)
           break
 
-    self.params.put("SunnylinkDongleId", sunnylink_dongle_id or UNREGISTERED_SUNNYLINK_DONGLE_ID, block=True)
+    if successful_registration:
+      self.params.put("SunnylinkDongleId", sunnylink_dongle_id, block=True)
 
     # Set the last ping time to the current time since we were just talking to the API
     last_ping = int((time.monotonic() if successful_registration else start_time) * 1e9)
