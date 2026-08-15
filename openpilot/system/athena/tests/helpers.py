@@ -44,10 +44,14 @@ class MockApi:
 
 class MockWebsocket:
   sock = socket.socket()
+  timeout: float | None = None
 
   def __init__(self, recv_queue, send_queue):
     self.recv_queue = recv_queue
     self.send_queue = send_queue
+
+  def settimeout(self, timeout):
+    self.timeout = timeout
 
   def recv(self):
     data = self.recv_queue.get()
