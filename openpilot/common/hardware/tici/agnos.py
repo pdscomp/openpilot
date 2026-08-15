@@ -13,6 +13,9 @@ import requests
 SPARSE_CHUNK_FMT = struct.Struct('H2xI4x')
 
 AGNOS_MANIFEST_FILE = "openpilot/system/hardware/tici/agnos.json"
+ABCTL = "abctl"
+ACTIVATION_ATTEMPTS = 3
+ACTIVATION_RETRY_DELAY = 1
 
 
 class StreamingDecompressor:
@@ -91,14 +94,27 @@ def noop(f: StreamingDecompressor) -> Generator[bytes, None, None]:
     yield chunk
 
 
+def get_active_slot_number() -> int:
+  current_slot = subprocess.check_output([ABCTL, "--boot_slot"], text=True).strip()
+  if current_slot not in ("_a", "_b"):
+    raise RuntimeError(f"unexpected active slot: {current_slot!r}")
+  return 0 if current_slot == "_a" else 1
+
+
 def get_target_slot_number() -> int:
-  current_slot = subprocess.check_output(["abctl", "--boot_slot"], encoding='utf-8').strip()
-  return 1 if current_slot == "_a" else 0
+  return 1 - get_active_slot_number()
 
 
 def slot_number_to_suffix(slot_number: int) -> str:
-  assert slot_number in (0, 1)
+  if slot_number not in (0, 1):
+    raise ValueError(f"invalid slot number: {slot_number}")
   return '_a' if slot_number == 0 else '_b'
+
+
+def validate_target_slot_number(target_slot_number: int) -> None:
+  slot_number_to_suffix(target_slot_number)
+  if target_slot_number == get_active_slot_number():
+    raise RuntimeError(f"target slot {target_slot_number} is already active")
 
 
 def get_partition_path(target_slot_number: int, partition: dict) -> str:
@@ -114,7 +130,7 @@ def get_raw_hash(path: str, partition_size: int) -> str:
   raw_hash = hashlib.sha256()
   pos, chunk_size = 0, 1024 * 1024
 
-  with open(path, 'rb+') as out:
+  with open(path, 'rb') as out:
     while pos < partition_size:
       n = min(chunk_size, partition_size - pos)
       raw_hash.update(out.read(n))
@@ -140,7 +156,7 @@ def verify_partition(target_slot_number: int, partition: dict[str, str | int], f
   if full_check:
     return get_raw_hash(path, partition_size) == partition_hash.lower()
   else:
-    with open(path, 'rb+') as out:
+    with open(path, 'rb') as out:
       out.seek(partition_size)
       return out.read(64) == partition_hash.lower().encode()
 
@@ -153,6 +169,14 @@ def clear_partition_hash(target_slot_number: int, partition: dict) -> None:
     out.seek(partition_size)
     out.write(b"\x00" * 64)
     os.sync()
+
+
+def load_manifest(manifest_path: str) -> list[dict]:
+  with open(manifest_path) as f:
+    manifest = json.load(f)
+  if not isinstance(manifest, list):
+    raise ValueError("AGNOS manifest must be a list")
+  return manifest
 
 
 def extract_compressed_image(target_slot_number: int, partition: dict, cloudlog):
@@ -207,28 +231,41 @@ def flash_partition(target_slot_number: int, partition: dict, cloudlog, standalo
       out.write(partition['hash_raw'].lower().encode())
 
 
-def swap(manifest_path: str, target_slot_number: int, cloudlog) -> None:
-  update = json.load(open(manifest_path))
-  for partition in update:
-    if not partition.get('full_check', False):
-      clear_partition_hash(target_slot_number, partition)
+def activate_slot(target_slot_number: int, cloudlog) -> None:
+  validate_target_slot_number(target_slot_number)
+  for attempt in range(1, ACTIVATION_ATTEMPTS + 1):
+    try:
+      subprocess.run([ABCTL, "--set_active", str(target_slot_number)], check=True, capture_output=True, text=True)
+      if get_active_slot_number() == target_slot_number:
+        cloudlog.info(f"Activated slot {target_slot_number}")
+        return
+      cloudlog.error(f"Activation postcondition failed for slot {target_slot_number}")
+    except subprocess.CalledProcessError as exc:
+      cloudlog.error(f"Activation failed for slot {target_slot_number}: {exc}")
 
-  while True:
-    out = subprocess.check_output(f"abctl --set_active {target_slot_number}", shell=True, stderr=subprocess.STDOUT, encoding='utf8')
-    if ("No such file or directory" not in out) and ("lun as boot lun" in out):
-      cloudlog.info(f"Swap successful {out}")
-      break
-    else:
-      cloudlog.error(f"Swap failed {out}")
+    if attempt < ACTIVATION_ATTEMPTS:
+      time.sleep(ACTIVATION_RETRY_DELAY)
+
+  raise RuntimeError(f"failed to activate slot {target_slot_number}")
+
+
+def swap(manifest_path: str, target_slot_number: int, cloudlog) -> None:
+  validate_target_slot_number(target_slot_number)
+  if not verify_agnos_update(manifest_path, target_slot_number):
+    raise RuntimeError(f"AGNOS verification failed for target slot {target_slot_number}")
+  activate_slot(target_slot_number, cloudlog)
 
 
 def flash_agnos_update(manifest_path: str, target_slot_number: int, cloudlog, standalone=False) -> None:
-  update = json.load(open(manifest_path))
+  validate_target_slot_number(target_slot_number)
+  update = load_manifest(manifest_path)
+  if not update:
+    raise ValueError("AGNOS manifest must contain at least one partition")
 
   cloudlog.info(f"Target slot {target_slot_number}")
 
   # set target slot as unbootable
-  subprocess.run(f"abctl --set_unbootable {target_slot_number}", shell=True)
+  subprocess.run([ABCTL, "--set_unbootable", str(target_slot_number)], check=True)
 
   for partition in update:
     success = False
@@ -236,6 +273,8 @@ def flash_agnos_update(manifest_path: str, target_slot_number: int, cloudlog, st
     for retries in range(10):
       try:
         flash_partition(target_slot_number, partition, cloudlog, standalone)
+        if not verify_partition(target_slot_number, partition):
+          raise RuntimeError(f"verification failed for {partition['name']}")
         success = True
         break
 
@@ -248,40 +287,54 @@ def flash_agnos_update(manifest_path: str, target_slot_number: int, cloudlog, st
       cloudlog.info(f"Failed to flash {partition['name']}, aborting")
       raise Exception("Maximum retries exceeded")
 
+  if not verify_agnos_update(manifest_path, target_slot_number):
+    raise RuntimeError(f"AGNOS verification failed for target slot {target_slot_number}")
+
   cloudlog.info(f"AGNOS ready on slot {target_slot_number}")
 
 
 def verify_agnos_update(manifest_path: str, target_slot_number: int) -> bool:
-  update = json.load(open(manifest_path))
-  return all(verify_partition(target_slot_number, partition) for partition in update)
+  update = load_manifest(manifest_path)
+  return bool(update) and all(verify_partition(target_slot_number, partition) for partition in update)
 
 
-if __name__ == "__main__":
+def main(argv: list[str] | None = None) -> int:
   import argparse
   import logging
 
   parser = argparse.ArgumentParser(description="Flash and verify AGNOS update",
                                    formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
-  parser.add_argument("--verify", action="store_true", help="Verify and perform swap if update ready")
-  parser.add_argument("--swap", action="store_true", help="Verify and perform swap, downloads if necessary")
+  action = parser.add_mutually_exclusive_group()
+  action.add_argument("--verify", action="store_true", help="Verify and perform swap if update ready")
+  action.add_argument("--verify-only", action="store_true", help="Verify without changing slots")
+  action.add_argument("--swap", action="store_true", help="Verify and perform swap, downloads if necessary")
   parser.add_argument("manifest", help="Manifest json")
-  args = parser.parse_args()
+  args = parser.parse_args(argv)
 
   logging.basicConfig(level=logging.INFO)
 
   target_slot_number = get_target_slot_number()
-  if args.verify:
+  if args.verify_only:
+    return 0 if verify_agnos_update(args.manifest, target_slot_number) else 1
+  elif args.verify:
     if verify_agnos_update(args.manifest, target_slot_number):
       swap(args.manifest, target_slot_number, logging)
-      exit(0)
-    exit(1)
+      return 0
+    return 1
   elif args.swap:
-    while not verify_agnos_update(args.manifest, target_slot_number):
+    if not verify_agnos_update(args.manifest, target_slot_number):
       logging.error("Verification failed. Flashing AGNOS")
       flash_agnos_update(args.manifest, target_slot_number, logging, standalone=True)
 
+    if not verify_agnos_update(args.manifest, target_slot_number):
+      raise RuntimeError("AGNOS verification failed after flashing")
     logging.warning(f"Verification succeeded. Swapping to slot {target_slot_number}")
     swap(args.manifest, target_slot_number, logging)
   else:
     flash_agnos_update(args.manifest, target_slot_number, logging, standalone=True)
+  return 0
+
+
+if __name__ == "__main__":
+  raise SystemExit(main())
