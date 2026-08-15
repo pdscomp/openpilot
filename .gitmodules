@@ -4,10 +4,10 @@
 # zephleggett/opendbc-sunnypilot.git or zephleggett/opendbc.git.
 [submodule "panda"]
   path = panda
-  url = https://github.com/sunnyhaibin/panda.git
+  url = https://github.com/pdscomp/panda.git
 [submodule "opendbc"]
   path = opendbc_repo
-  url = https://github.com/zoompilot/opendbc.git
+  url = https://github.com/pdscomp/opendbc.git
 [submodule "msgq"]
   path = msgq_repo
   url = https://github.com/sunnypilot/msgq.git
