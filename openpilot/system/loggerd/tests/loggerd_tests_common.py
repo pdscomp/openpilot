@@ -5,6 +5,7 @@ from pathlib import Path
 
 import openpilot.system.loggerd.deleter as deleter
 import openpilot.system.loggerd.uploader as uploader
+from openpilot.common.api.backend import COMMA_BACKEND
 from openpilot.common.params import Params
 from openpilot.common.hardware.hw import Paths
 from openpilot.system.loggerd.xattr_cache import setxattr
@@ -35,7 +36,7 @@ class MockResponse:
 
 class MockApi:
   def __init__(self, dongle_id):
-    pass
+    self.dongle_id = dongle_id
 
   def get(self, *args, **kwargs):
     return MockResponse('{"url": "http://localhost/does/not/exist", "headers": {}}', 200)
@@ -45,7 +46,7 @@ class MockApi:
 
 class MockApiIgnore:
   def __init__(self, dongle_id):
-    pass
+    self.dongle_id = dongle_id
 
   def get(self, *args, **kwargs):
     return MockResponse('', 412)
@@ -63,10 +64,10 @@ class UploaderTestCase:
   seg_dir: str
 
   def set_ignore(self):
-    uploader.Api = MockApiIgnore  # ty: ignore[invalid-assignment]  # test double
+    uploader.connect_client = lambda _: (COMMA_BACKEND, MockApiIgnore("0000000000000000"))  # ty: ignore[invalid-assignment]
 
   def setup_method(self):
-    uploader.Api = MockApi  # ty: ignore[invalid-assignment]  # test double
+    uploader.connect_client = lambda _: (COMMA_BACKEND, MockApi("0000000000000000"))  # ty: ignore[invalid-assignment]
     uploader.fake_upload = True
     uploader.force_wifi = True
     uploader.allow_sleep = False
@@ -78,6 +79,7 @@ class UploaderTestCase:
     self.params = Params()
     self.params.put("IsOffroad", True, block=True)
     self.params.put("DongleId", "0000000000000000", block=True)
+    self.params.put("CommaDongleId", "0000000000000000", block=True)
 
   def make_file_with_data(self, f_dir: str, fn: str, size_mb: float = .1, lock: bool = False,
                           upload_xattr: bytes | None = None, preserve_xattr: bytes | None = None) -> Path:
