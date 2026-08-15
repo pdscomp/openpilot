@@ -11,12 +11,17 @@
 #include "board/provision.h"
 
 #include "opendbc/safety/safety.h"
+#include "board/safety_mode.h"
 
 #include "board/health.h"
 
 #include "board/drivers/can_common.h"
 
-#include "board/drivers/fdcan.h"
+#ifdef STM32H7
+  #include "board/drivers/fdcan.h"
+#else
+  #include "board/drivers/bxcan.h"
+#endif
 
 #include "board/sys/power_saving.h"
 
@@ -40,6 +45,9 @@ void debug_ring_callback(uart_ring *ring) {
 // this is the only way to leave silent mode
 void set_safety_mode(uint16_t mode, uint16_t param) {
   uint16_t mode_copy = mode;
+  #ifdef STM32F4
+    mode_copy = get_supported_safety_mode(mode_copy, false);
+  #endif
   int err = set_safety_hooks(mode_copy, param);
   if (err == -1) {
     print("Error: safety set mode failed. Falling back to SILENT\n");

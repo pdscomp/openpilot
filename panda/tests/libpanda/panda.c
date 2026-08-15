@@ -16,6 +16,7 @@ void can_tx_comms_resume_spi(void) { };
 #include "libc.h"
 #include "boards/board_declarations.h"
 #include "opendbc/safety/safety.h"
+#include "safety_mode.h"
 #include "main_definitions.h"
 #include "drivers/can_common.h"
 
@@ -26,3 +27,7 @@ can_ring *tx3_q = &can_tx3_q;
 
 #include "comms_definitions.h"
 #include "can_comms.h"
+
+uint16_t test_get_supported_safety_mode(uint16_t mode, bool has_canfd) {
+  return get_supported_safety_mode(mode, has_canfd);
+}

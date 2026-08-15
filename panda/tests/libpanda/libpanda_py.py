@@ -25,6 +25,7 @@ typedef struct {
 
 ffi.cdef("""
 int set_safety_hooks(uint16_t mode, uint16_t param);
+uint16_t test_get_supported_safety_mode(uint16_t mode, bool has_canfd);
 """)
 
 ffi.cdef("""

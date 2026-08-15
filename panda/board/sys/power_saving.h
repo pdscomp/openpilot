@@ -52,6 +52,7 @@ void set_power_save_state(bool enable) {
   }
 }
 
+#ifdef STM32H7
 static void enter_stop_mode(void) {
   // set all GPIO to analog mode to reduce power, analog mode also disables pull resistors
   register_set(&(GPIOA->MODER), 0xFFFFFFFFU, 0xFFFFFFFFU);
@@ -147,3 +148,9 @@ static void enter_stop_mode(void) {
 
   NVIC_SystemReset();
 }
+#else
+static void enter_stop_mode(void) {
+  // F4 has no current stop-mode implementation; a debug request fails safe by resetting.
+  NVIC_SystemReset();
+}
+#endif

@@ -26,7 +26,9 @@
 UART_BUFFER(debug, FIFO_SIZE_INT, FIFO_SIZE_INT, USART2, debug_ring_callback, true)
 
 // SOM debug = UART7
-UART_BUFFER(som_debug, FIFO_SIZE_INT, FIFO_SIZE_INT, UART7, NULL, true)
+#ifdef STM32H7
+  UART_BUFFER(som_debug, FIFO_SIZE_INT, FIFO_SIZE_INT, UART7, NULL, true)
+#endif
 
 uart_ring *get_ring_by_number(int a) {
   uart_ring *ring = NULL;
@@ -34,9 +36,11 @@ uart_ring *get_ring_by_number(int a) {
     case 0:
       ring = &uart_ring_debug;
       break;
-    case 4:
-      ring = &uart_ring_som_debug;
-      break;
+    #ifdef STM32H7
+      case 4:
+        ring = &uart_ring_som_debug;
+        break;
+    #endif
     default:
       ring = NULL;
       break;

@@ -16,6 +16,7 @@ IGNORED_PATHS = (
   'board/jungle',
   'board/body',
   'board/stm32h7/inc',
+  'board/stm32f4/inc',
   'board/fake_stm.h',
 
   # bootstub only files
@@ -23,6 +24,7 @@ IGNORED_PATHS = (
   'board/bootstub.c',
   'board/bootstub_declarations.h',
   'board/stm32h7/llflash.h',
+  'board/stm32f4/llflash.h',
 )
 
 mutations = [
@@ -55,7 +57,7 @@ patterns = [
 
 all_files = glob.glob('board/**', root_dir=ROOT, recursive=True)
 files = sorted(f for f in all_files if f.endswith(('.c', '.h')) and not f.startswith(IGNORED_PATHS))
-assert len(files) > 50, all(d in files for d in ('board/main.c', 'board/stm32h7/llfdcan.h'))
+assert len(files) > 50 and all(d in files for d in ('board/main.c', 'board/stm32f4/llbxcan.h', 'board/stm32h7/llfdcan.h'))
 
 # fixed seed so every xdist worker collects the same test params
 rng = random.Random(len(files))

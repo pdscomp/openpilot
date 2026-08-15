@@ -11,6 +11,7 @@ def check_signature(p):
 
 
 def test_dfu(p):
+  mcu_type = p.get_mcu_type()
   dfu_serial = p.get_dfu_serial()
 
   p.reset(enter_bootstub=True)
@@ -18,7 +19,7 @@ def test_dfu(p):
   assert Panda.wait_for_dfu(dfu_serial, timeout=19), "failed to enter DFU"
 
   dfu = PandaDFU(dfu_serial)
-  assert dfu.get_mcu_type() == McuType.H7
+  assert dfu.get_mcu_type() == mcu_type
 
   assert dfu_serial in PandaDFU.list()
 
@@ -34,10 +35,19 @@ def test_known_bootstub(p):
   Test that compiled app can work with known production bootstub
   """
   known_bootstubs = {
+    # covers the two cases listed in Panda.connect
+    McuType.F4: [
+      # case A - no bcdDevice or panda type, has to assume F4
+      "bootstub_f4_first_dos_production.panda.bin",
+
+      # case B - just bcdDevice
+      "bootstub_f4_only_bcd.panda.bin",
+    ],
     McuType.H7: ["bootstub.panda_h7.bin"],
   }
 
-  for kb in known_bootstubs[McuType.H7]:
+  mcu_type = p.get_mcu_type()
+  for kb in known_bootstubs[mcu_type]:
     app_serial = p.get_usb_serial()
     assert app_serial is not None
 

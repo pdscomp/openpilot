@@ -28,7 +28,11 @@ static int get_health_pkt(void *dat) {
   health->heartbeat_lost_pkt = heartbeat_lost;
   health->safety_rx_checks_invalid_pkt = safety_rx_checks_invalid;
 
-  health->spi_error_count_pkt = spi_error_count;
+  #ifdef STM32F4
+    health->spi_error_count_pkt = 0U;
+  #else
+    health->spi_error_count_pkt = spi_error_count;
+  #endif
 
   health->fault_status_pkt = fault_status;
   health->faults_pkt = faults;
@@ -282,7 +286,9 @@ int comms_control_handler(ControlPacket_t *req, uint8_t *resp) {
       break;
     // **** 0xe8: set can-fd auto swithing mode
     case 0xe8:
+      #ifndef STM32F4
       bus_config[req->param1].canfd_auto = req->param2 > 0U;
+      #endif
       break;
     // **** 0xf1: Clear CAN ring buffer.
     case 0xf1:
@@ -318,6 +324,7 @@ int comms_control_handler(ControlPacket_t *req, uint8_t *resp) {
       break;
     // **** 0xf9: set CAN FD data bitrate
     case 0xf9:
+      #ifndef STM32F4
       if ((req->param1 < PANDA_CAN_CNT) &&
            is_speed_valid(req->param2, data_speeds, sizeof(data_speeds)/sizeof(data_speeds[0]))) {
         bus_config[req->param1].can_data_speed = req->param2;
@@ -326,14 +333,17 @@ int comms_control_handler(ControlPacket_t *req, uint8_t *resp) {
         bool ret = can_init(CAN_NUM_FROM_BUS_NUM(req->param1));
         UNUSED(ret);
       }
+      #endif
       break;
     // **** 0xfc: set CAN FD non-ISO mode
     case 0xfc:
+      #ifndef STM32F4
       if (req->param1 < PANDA_CAN_CNT) {
         bus_config[req->param1].canfd_non_iso = (req->param2 != 0U);
         bool ret = can_init(CAN_NUM_FROM_BUS_NUM(req->param1));
         UNUSED(ret);
       }
+      #endif
       break;
     default:
       print("NO HANDLER ");
