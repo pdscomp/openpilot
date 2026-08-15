@@ -1,12 +1,12 @@
 name: Build Prebuilt
 
 # Branch-generic prebuilt builder for the comma 3X self-hosted runner (label: tici).
-# Lives ON each *-src source branch (rel-src, stg-src), NOT on dev or ap-dev. Fires on push to its
-# branch and publishes the de-suffixed prebuilt branch in THIS repo:
+# Lives on source branches and publishes a single-root prebuilt branch in THIS repo:
 #   push to rel-src -> builds rel-src -> publishes rel
 #   push to stg-src -> builds stg-src -> publishes stg
+#   push to AdventurePilot/c3xl/stg -> builds it -> publishes AdventurePilot-c3xl-stg-candidate-tici
 # Same-repo publish uses the built-in GITHUB_TOKEN (no PAT). GITHUB_TOKEN pushes don't re-trigger CI,
-# so publishing rel/stg can't loop.
+# so publishing the flat branch can't loop.
 #
 # Safety carried over from the known-good build:
 #   - LFS: never carry .gitattributes into the published tree (so `git add` can't re-pointerize real
@@ -19,7 +19,7 @@ name: Build Prebuilt
 
 on:
   push:
-    branches: [ rel-src, stg-src ]
+    branches: [ rel-src, stg-src, "AdventurePilot/c3xl/stg" ]
   workflow_dispatch:
     inputs:
       source_branch:
@@ -28,7 +28,7 @@ on:
         default: ""
 
 permissions:
-  contents: write
+  contents: read
 
 env:
   SOURCE_BRANCH: ${{ github.event.inputs.source_branch || github.ref_name }}
@@ -47,6 +47,15 @@ jobs:
     outputs:
       source_sha: ${{ steps.meta.outputs.sha }}
     steps:
+      - name: Validate source branch
+        id: validate
+        shell: bash
+        run: |
+          case "$SOURCE_BRANCH" in
+            rel-src|stg-src|AdventurePilot/c3xl/stg) ;;
+            *) echo "::error::unsupported source branch: $SOURCE_BRANCH"; exit 1 ;;
+          esac
+
       - name: Reclaim workspace (previous builds leave root-owned files)
         run: |
           # scons/uv leave root-owned *.egg-info under the vendored submodules. actions/checkout then
@@ -58,7 +67,8 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: recursive
-          ref: ${{ env.SOURCE_BRANCH }}
+          ref: refs/heads/${{ env.SOURCE_BRANCH }}
+          persist-credentials: false
 
       - name: LFS pull (guarantee real bytes, not pointers)
         run: git lfs pull
@@ -232,17 +242,19 @@ jobs:
 
       # --- boot-safety: always restore the device, even if the build failed ---
       - name: Re-enable powersave
-        if: always()
+        if: ${{ always() && steps.validate.outcome == 'success' }}
         run: |
           PYTHONPATH=$PYTHONPATH:${{ github.workspace }}/ ${{ github.workspace }}/scripts/manage-powersave.py --enable
 
       - name: Cleanup build directory
-        if: always()
+        if: ${{ always() && steps.validate.outcome == 'success' }}
         # BUILD_DIR is a bind-mount point (/data/openpilot), so clear its CONTENTS, not the dir itself
         # (rm -rf the mountpoint would EBUSY and fail this always() step -> would fail the build job).
         run: sudo find ${BUILD_DIR}/ -mindepth 1 -delete 2>/dev/null || true
 
   publish:
+    permissions:
+      contents: write
     needs: [ build ]
     runs-on: ubuntu-24.04
     concurrency:
@@ -264,20 +276,21 @@ jobs:
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git config --global user.name "github-actions[bot]"
 
-      - name: Publish prebuilt (strip -src)
+      - name: Publish single-root prebuilt
         env:
           SRC: ${{ github.event.inputs.source_branch || github.ref_name }}
           REPO: ${{ github.repository }}
           SOURCE_SHA: ${{ needs.build.outputs.source_sha }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          set -e
-          # rel-src -> rel, stg-src -> stg; anything else falls back to <branch>-prebuilt.
+          set -euo pipefail
+          # Preserve AP's rel-src/stg-src convention; C3XL publishes only to its candidate ref.
           case "$SRC" in
-            *-src) DEV_BRANCH="${SRC%-src}" ;;
-            *)     DEV_BRANCH="${SRC}-prebuilt" ;;
+            rel-src)                    DEV_BRANCH="rel" ;;
+            stg-src)                    DEV_BRANCH="stg" ;;
+            AdventurePilot/c3xl/stg)    DEV_BRANCH="AdventurePilot-c3xl-stg-candidate-tici" ;;
+            *) echo "::error::unsupported source branch: $SRC"; exit 1 ;;
           esac
-          VERSION="$(date '+%Y.%m.%d')-${{ github.run_number }}"
           GIT_ORIGIN="https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git"
           echo "[-] publishing ${SRC} -> ${DEV_BRANCH} on ${REPO}"
           cd ${{ env.OUTPUT_DIR }}
@@ -287,16 +300,23 @@ jobs:
           if grep -rlIE "^version https://git-lfs\.github\.com/spec/v1" . > /tmp/lfs_ptrs.txt; then
             echo "::error::LFS pointer stubs present at publish time:"; cat /tmp/lfs_ptrs.txt; exit 1
           fi
+          VERSION_LINE="$(< openpilot/sunnypilot/common/version.h)"
+          SP_VERSION="${VERSION_LINE#*\"}"
+          SP_VERSION="${SP_VERSION%%\"*}"
+          if [ -z "$SP_VERSION" ]; then
+            echo "::error::could not read SUNNYPILOT_VERSION"; exit 1
+          fi
+          DATETIME="$(date '+%Y-%m-%dT%H:%M:%S')"
+          SOURCE_URL="https://github.com/${REPO}/tree/${SOURCE_SHA}"
           git init -q
-          git remote add origin "$GIT_ORIGIN"
-          git fetch -q origin "$DEV_BRANCH" \
-            || (git checkout -b "$DEV_BRANCH" && git commit -q --allow-empty -m "initial prebuilt" && git push -u origin "$DEV_BRANCH")
+          git checkout -q --orphan "$DEV_BRANCH"
           git add -f .
-          DATETIME=$(date '+%Y-%m-%dT%H:%M:%S')
-          git commit -q -a -m "prebuilt v${VERSION}
-          source branch: ${SRC}
+          git commit -q -m "sunnypilot v${SP_VERSION}
+          version: sunnypilot v${SP_VERSION}
           date: ${DATETIME}
+          source branch: ${SRC}
           source commit: ${SOURCE_SHA}
-          "
-          git branch -M "$DEV_BRANCH"
-          git push -f origin "$DEV_BRANCH"
+          source: ${SOURCE_URL}"
+          # A flat prebuilt is one complete root commit, not the source repository's history.
+          test "$(git rev-list --parents -n 1 HEAD | wc -w)" -eq 1
+          git push -f "$GIT_ORIGIN" "HEAD:refs/heads/$DEV_BRANCH"
