@@ -9,7 +9,7 @@ import traceback
 from openpilot.cereal import log
 import openpilot.cereal.messaging as messaging
 import openpilot.system.sentry as sentry
-from openpilot.common.api.backend import enforce_backend_state
+from openpilot.common.api.backend import enforce_backend_state, finalize_ti_enable
 from openpilot.common.utils import atomic_write
 from openpilot.common.ignition import get_ignition_state
 from openpilot.common.params import Params, ParamKeyFlag
@@ -61,7 +61,9 @@ def manager_init() -> None:
     if default_value is not None and params.get(k) is None:
       params.put(k, default_value, block=True)
 
-  # Enforce the backend lock before registration or telemetry starts.
+  # Complete any staged TI transition, then enforce the backend lock,
+  # before registration or telemetry starts.
+  finalize_ti_enable(params)
   enforce_backend_state(params)
 
   # Create folders needed for msgq

@@ -21,6 +21,8 @@ CONNECT_PROTECTED_PARAMS = {
   "UseKonikServer",
   "KonikLockout",
   "KonikInterlock",
+  "TorqueInterceptorEnabled",
+  "TorqueInterceptorEnableRequest",
   "CommaDongleId",
   "KonikDongleId",
   "DongleId",
