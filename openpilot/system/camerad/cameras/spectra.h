@@ -133,13 +133,14 @@ public:
 
 class SpectraCamera {
 public:
-  SpectraCamera(SpectraMaster *master, const CameraConfig &config);
+  SpectraCamera(SpectraMaster *master, const CameraConfig &config, bool c3xl);
   ~SpectraCamera();
 
   void camera_open(VisionIpcServer *v);
   bool handle_camera_event(const cam_req_mgr_message *event_data);
   void camera_close();
   void camera_map_bufs();
+  static void setExpectedCameraCount(int count) { expected_camera_count = count; }
   void config_bps(int idx, int request_id);
   void config_ife(int idx, int request_id, bool init=false);
 
@@ -163,6 +164,7 @@ public:
   int ife_buf_depth = -1;
   bool open = false;
   bool enabled = true;
+  bool c3xl = false;
   CameraConfig cc;
   std::unique_ptr<const SensorInfo> sensor;
 
@@ -227,6 +229,7 @@ private:
   };
   inline static std::map<int, SyncData> camera_sync_data;
   inline static bool first_frame_synced = false;
+  inline static int expected_camera_count = -1;
 
   // a mode for stressing edge cases: realignment, sync failures, etc.
   inline bool stress_test(std::string log) {

@@ -8,6 +8,7 @@
 
 #include "common/util.h"
 #include "system/camerad/cameras/camera_common.h"
+#include "system/camerad/sensors/sensor.h"
 
 #define W 240
 #define H 160
@@ -81,4 +82,27 @@ TEST_CASE("camera.test_calculate_exposure_value") {
   assert(passed);
 
   delete[] fb_y;
+}
+
+TEST_CASE("camera.ar0231_sensor_contract") {
+  AR0231 sensor;
+
+  REQUIRE(sensor.image_sensor == cereal::FrameData::ImageSensor::AR0231);
+  REQUIRE(sensor.frame_width == 1928);
+  REQUIRE(sensor.frame_height == 1208);
+  REQUIRE(sensor.frame_stride == 2896);
+  REQUIRE(sensor.bits_per_pixel == 12);
+  REQUIRE(sensor.probe_reg_addr == 0x3000);
+  REQUIRE(sensor.probe_expected_data == 0x354);
+  REQUIRE(sensor.getSlaveAddress(0) == 0x20);
+  REQUIRE(sensor.getSlaveAddress(1) == 0x30);
+  REQUIRE(sensor.getSlaveAddress(2) == 0x20);
+  REQUIRE(sensor.start_reg_array.size() == 1);
+  REQUIRE_FALSE(sensor.init_reg_array.empty());
+  REQUIRE(sensor.color_correct_matrix.size() == 9);
+  REQUIRE(sensor.gamma_lut_rgb.size() == 64);
+  REQUIRE(sensor.linearization_lut.size() == 36);
+  REQUIRE(sensor.linearization_pts.size() == 4);
+  REQUIRE(sensor.vignetting_lut.size() == 221);
+  REQUIRE(sensor.getExposureRegisters(0x123, 7, true).size() == 3);
 }

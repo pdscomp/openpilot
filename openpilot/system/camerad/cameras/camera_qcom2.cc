@@ -9,10 +9,12 @@
 #include <cerrno>
 #include <cmath>
 #include <cstring>
+#include <cstdlib>
 #include <string>
 #include <vector>
 
 #include "common/params.h"
+#include "common/hardware/hw.h"
 #include "common/swaglog.h"
 
 
@@ -45,7 +47,7 @@ public:
   float fl_pix = 0;
   std::unique_ptr<PubMaster> pm;
 
-  CameraState(SpectraMaster *master, const CameraConfig &config) : camera(master, config) {};
+  CameraState(SpectraMaster *master, const CameraConfig &config, bool c3xl) : camera(master, config, c3xl) {};
   ~CameraState();
   void init(VisionIpcServer *v);
   void update_exposure_score(float desired_ev, int exp_t, int exp_g_idx, float exp_gain);
@@ -248,6 +250,8 @@ void camerad_thread() {
   // TODO: centralize enabled handling
 
   VisionIpcServer v("camerad");
+  Params params;
+  const bool c3xl = Hardware::get_name() == "tici" && params.get("HardwareC3XLMode") == "1";
 
   // *** initial ISP init ***
   SpectraMaster m;
@@ -256,9 +260,19 @@ void camerad_thread() {
   // *** per-cam init ***
   std::vector<std::unique_ptr<CameraState>> cams;
   for (const auto &config : ALL_CAMERA_CONFIGS) {
-    auto cam = std::make_unique<CameraState>(&m, config);
+    auto cam = std::make_unique<CameraState>(&m, config, c3xl);
     cam->init(&v);
+    if (c3xl && config.camera_num == ROAD_CAMERA_CONFIG.camera_num && !cam->camera.enabled) {
+      LOGE("required C3XL road camera unavailable");
+      std::exit(EXIT_FAILURE);
+    }
     cams.emplace_back(std::move(cam));
+  }
+
+  if (c3xl) {
+    int enabled_camera_count = std::count_if(cams.begin(), cams.end(),
+                                             [](const auto &cam) { return cam->camera.enabled; });
+    SpectraCamera::setExpectedCameraCount(enabled_camera_count);
   }
 
   v.start_listener();
