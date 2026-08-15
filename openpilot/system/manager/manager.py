@@ -9,6 +9,7 @@ import traceback
 from openpilot.cereal import log
 import openpilot.cereal.messaging as messaging
 import openpilot.system.sentry as sentry
+from openpilot.common.api.backend import enforce_backend_state, finalize_ti_enable
 from openpilot.common.utils import atomic_write
 from openpilot.common.params import Params, ParamKeyFlag
 from openpilot.common.text_window import TextWindow
@@ -58,6 +59,10 @@ def manager_init() -> None:
     default_value = params.get_default_value(k)
     if default_value is not None and params.get(k) is None:
       params.put(k, default_value, block=True)
+
+  # Complete any staged TI transition before registration or telemetry starts.
+  finalize_ti_enable(params)
+  enforce_backend_state(params)
 
   # Create folders needed for msgq
   try:
