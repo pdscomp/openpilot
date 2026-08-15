@@ -231,9 +231,10 @@ void SpectraMaster::init() {
 
 // *** SpectraCamera ***
 
-SpectraCamera::SpectraCamera(SpectraMaster *master, const CameraConfig &config)
+SpectraCamera::SpectraCamera(SpectraMaster *master, const CameraConfig &config, bool c3xl_)
   : m(master),
     enabled(config.enabled),
+    c3xl(c3xl_),
     cc(config) {
   ife_buf_depth = VIPC_BUFFER_COUNT;
   assert(ife_buf_depth < MAX_IFE_BUFS);
@@ -1035,7 +1036,14 @@ void SpectraCamera::camera_map_bufs() {
 
 bool SpectraCamera::openSensor() {
   sensor_fd = open_v4l_by_name_and_index("cam-sensor-driver", cc.camera_num);
-  assert(sensor_fd >= 0);
+  if (sensor_fd < 0) {
+    if (c3xl && cc.camera_num != ROAD_CAMERA_CONFIG.camera_num) {
+      LOGW("optional C3XL sensor %d unavailable", cc.camera_num);
+      enabled = false;
+      return false;
+    }
+    assert(sensor_fd >= 0);
+  }
   LOGD("opened sensor for %d", cc.camera_num);
 
   LOGD("-- Probing sensor %d", cc.camera_num);
@@ -1045,9 +1053,10 @@ bool SpectraCamera::openSensor() {
     return (sensors_init() == 0);
   };
 
-  // Figure out which sensor we have
-  if (!init_sensor_lambda(new OS04C10) &&
-      !init_sensor_lambda(new OX03C10)) {
+  // C3XL camera hardware is AR0231 only. Keep the stock probe order intact.
+  bool sensor_ready = c3xl ? init_sensor_lambda(new AR0231)
+                           : (init_sensor_lambda(new OS04C10) || init_sensor_lambda(new OX03C10));
+  if (!sensor_ready) {
     LOGE("** sensor %d FAILED bringup, disabling", cc.camera_num);
     enabled = false;
     return false;
@@ -1539,8 +1548,10 @@ bool SpectraCamera::syncFirstFrame(int camera_id, uint64_t request_id, uint64_t 
   camera_sync_data[camera_id] = SyncData{timestamp, raw_id + 1, staggered};
 
   // Ensure all cameras are up
-  int enabled_camera_count = std::count_if(std::begin(ALL_CAMERA_CONFIGS), std::end(ALL_CAMERA_CONFIGS),
-                                           [](const auto &config) { return config.enabled; });
+  int enabled_camera_count = expected_camera_count >= 0
+                                 ? expected_camera_count
+                                 : std::count_if(std::begin(ALL_CAMERA_CONFIGS), std::end(ALL_CAMERA_CONFIGS),
+                                                 [](const auto &config) { return config.enabled; });
   bool all_cams_up = camera_sync_data.size() == enabled_camera_count;
 
   // Check that camera timestamps are properly aligned:
