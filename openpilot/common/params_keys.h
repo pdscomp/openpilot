@@ -53,6 +53,8 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"GsmApn", {PERSISTENT | BACKUP, STRING}},
     {"GsmMetered", {PERSISTENT | BACKUP, BOOL, "1"}},
     {"GsmRoaming", {PERSISTENT | BACKUP, BOOL}},
+    {"HardwareC3XLEvidence", {PERSISTENT | DONT_LOG, JSON, "{}"}},
+    {"HardwareC3XLMode", {PERSISTENT, INT, "0"}},
     {"HardwareSerial", {PERSISTENT, STRING}},
     {"HasAcceptedTerms", {PERSISTENT, STRING, "0"}},
     {"InstallDate", {PERSISTENT, TIME}},
