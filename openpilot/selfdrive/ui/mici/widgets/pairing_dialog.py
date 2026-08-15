@@ -3,7 +3,7 @@ import qrcode
 import numpy as np
 import time
 
-from openpilot.common.api import Api
+from openpilot.common.api.backend import connect_client, use_konik
 from openpilot.common.swaglog import cloudlog
 from openpilot.common.params import Params
 from openpilot.selfdrive.ui.ui_state import ui_state
@@ -24,21 +24,30 @@ class PairingDialog(NavWidget):
     self._last_qr_generation = float("-inf")
 
     self._txt_pair = gui_app.texture("icons_mici/settings/device/pair.png", 33, 60)
-    self._pair_label = UnifiedLabel("pair with comma connect", font_size=48, font_weight=FontWeight.BOLD, line_height=0.8)
+    self._pair_label = UnifiedLabel("", font_size=48, font_weight=FontWeight.BOLD, line_height=0.8)
 
-  def _get_pairing_url(self) -> str:
+  def _get_pairing_url(self) -> str | None:
     try:
-      dongle_id = self._params.get("DongleId") or ""
-      token = Api(dongle_id).get_token({'pair': True})
+      config, api = connect_client(self._params)
+      token = api.get_token({'pair': True})
+      if not token:
+        raise RuntimeError("empty pairing token")
+      return f"{config.pairing_host}/?pair={token}"
     except Exception as e:
       cloudlog.warning(f"Failed to get pairing token: {e}")
-      token = ""
-    return f"https://connect.comma.ai/?pair={token}"
+      return None
 
   def _generate_qr_code(self) -> None:
+    pairing_url = self._get_pairing_url()
+    if pairing_url is None:
+      if self._qr_texture and self._qr_texture.id != 0:
+        rl.unload_texture(self._qr_texture)
+      self._qr_texture = None
+      return
+
     try:
       qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_L, box_size=10, border=0)
-      qr.add_data(self._get_pairing_url())
+      qr.add_data(pairing_url)
       qr.make(fit=True)
 
       pil_img = qr.make_image(fill_color="white", back_color="black").convert('RGBA')
@@ -72,6 +81,7 @@ class PairingDialog(NavWidget):
 
   def _render(self, rect: rl.Rectangle):
     self._check_qr_refresh()
+    self._pair_label.set_text("pair with Konik Stable Connect" if use_konik(self._params) else "pair with comma connect")
 
     self._render_qr_code()
 
