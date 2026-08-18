@@ -356,6 +356,7 @@ struct OnroadEventSP @0xda96579883444c35 {
     speedLimitPending @22;
     e2eChime @23;
     laneChangeRoadEdge @24;
+    torqueInterceptorNotReady @25; (feat: name the cause when the torque interceptor reports not-ready)
   }
 }
 
@@ -450,6 +451,7 @@ struct BackupManagerSP @0xf98d843bfd7004a3 {
 struct CarStateSP @0xb86e6369214c01c8 {
   speedLimit @0 :Float32;
   cruiseSession @1 :CruiseSession;
+  torqueInterceptorReady @2 :Bool;
 
   # The card-side cruise arbiter's session, published at carState rate. On non-pcm
   # cars this is the authoritative SLA session: plannerd mirrors it into
