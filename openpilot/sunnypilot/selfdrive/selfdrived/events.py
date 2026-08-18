@@ -128,6 +128,11 @@ EVENTS_SP: dict[int, dict[str, Alert | AlertCallbackType]] = {
     ET.NO_ENTRY: NoEntryAlert("Brake Hold Active"),
   },
 
+  EventNameSP.torqueInterceptorNotReady: {
+    ET.PERMANENT: NormalPermanentAlert("Torque Interceptor Not Ready", "Check interceptor wiring and ODB2 power"),
+    ET.NO_ENTRY: NoEntryAlert("Torque Interceptor Not Ready"),
+  },
+
   EventNameSP.silentWrongGear: {
     ET.WARNING: Alert(
       "",
