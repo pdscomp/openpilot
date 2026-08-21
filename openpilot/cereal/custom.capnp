@@ -356,7 +356,7 @@ struct OnroadEventSP @0xda96579883444c35 {
     speedLimitPending @22;
     e2eChime @23;
     laneChangeRoadEdge @24;
-    torqueInterceptorNotReady @25; (feat: name the cause when the torque interceptor reports not-ready)
+    torqueInterceptorNotReady @25;
   }
 }
 
