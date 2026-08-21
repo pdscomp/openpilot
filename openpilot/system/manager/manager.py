@@ -144,6 +144,7 @@ def manager_thread() -> None:
 
   started_prev = False
   ignition_prev = False
+  ti_can_ignition_only = params.get_bool("TorqueInterceptorEnabled")  # see ignition comment below
 
   while True:
     sm.update(1000)
@@ -155,7 +156,12 @@ def manager_thread() -> None:
     elif not started and started_prev:
       params.clear_all(ParamKeyFlag.CLEAR_ON_OFFROAD_TRANSITION)
 
-    ignition = any(ps.ignitionLine or ps.ignitionCan for ps in sm['pandaStates'] if ps.pandaType != log.PandaState.PandaType.unknown)
+    # TI harness back-feeds the ignition sense line (see hardwared); with TI enabled
+    # the Mazda CAN ignition message (0x9E) is the only trustworthy source.
+    if ti_can_ignition_only:
+      ignition = any(ps.ignitionCan for ps in sm['pandaStates'] if ps.pandaType != log.PandaState.PandaType.unknown)
+    else:
+      ignition = any(ps.ignitionLine or ps.ignitionCan for ps in sm['pandaStates'] if ps.pandaType != log.PandaState.PandaType.unknown)
     if ignition and not ignition_prev:
       params.clear_all(ParamKeyFlag.CLEAR_ON_IGNITION_ON)
 

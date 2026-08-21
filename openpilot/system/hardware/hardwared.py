@@ -183,6 +183,10 @@ def hardware_thread(end_event, hw_queue) -> None:
   offroad_request_count = 0
 
   params = Params()
+  # The TI harness back-feeds the ignition sense line (observed stuck high on both
+  # zoompilot and frogpilot rlogs), so with TI enabled the Mazda CAN ignition
+  # message (0x9E) is the only trustworthy source.
+  ti_can_ignition_only = params.get_bool("TorqueInterceptorEnabled")
   power_monitor = PowerMonitoring()
 
   uptime_offroad: float = params.get("UptimeOffroad", return_default=True)
@@ -229,7 +233,10 @@ def hardware_thread(end_event, hw_queue) -> None:
     if sm.updated['pandaStates'] and len(pandaStates) > 0:
 
       # Set ignition based on any panda connected
-      onroad_conditions["ignition"] = any(ps.ignitionLine or ps.ignitionCan for ps in pandaStates if ps.pandaType != log.PandaState.PandaType.unknown)
+      if ti_can_ignition_only:
+        onroad_conditions["ignition"] = any(ps.ignitionCan for ps in pandaStates if ps.pandaType != log.PandaState.PandaType.unknown)
+      else:
+        onroad_conditions["ignition"] = any(ps.ignitionLine or ps.ignitionCan for ps in pandaStates if ps.pandaType != log.PandaState.PandaType.unknown)
 
       pandaState = pandaStates[0]
 

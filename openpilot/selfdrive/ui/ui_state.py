@@ -146,7 +146,11 @@ class UIState(UIStateSP):
         self.panda_type = panda_states[0].pandaType
         # Check ignition status across all pandas
         if self.panda_type != log.PandaState.PandaType.unknown:
-          self.ignition = any(state.ignitionLine or state.ignitionCan for state in panda_states)
+          # TI harness back-feeds the ignition line; trust CAN ignition only (see hardwared)
+          if self.params.get_bool("TorqueInterceptorEnabled"):
+            self.ignition = any(state.ignitionCan for state in panda_states)
+          else:
+            self.ignition = any(state.ignitionLine or state.ignitionCan for state in panda_states)
     elif not self.sm.alive["pandaStates"]:
       self.panda_type = log.PandaState.PandaType.unknown
 
