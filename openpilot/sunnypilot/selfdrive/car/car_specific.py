@@ -24,6 +24,7 @@ class CarSpecificEventsSP:
     self.CP_SP = CP_SP
 
     self.low_speed_alert = False
+    self.ti_not_ready_frames = 0
 
   def update(self, CS: structs.CarState, CS_SP: custom.CarStateSP, events: Events):
     events_sp = EventsSP()
@@ -50,7 +51,15 @@ class CarSpecificEventsSP:
             events.remove(EventName.resumeRequired)
 
     elif self.CP.brand == 'mazda':
-      if self.CP.flags & MazdaFlags.TORQUE_INTERCEPTOR and not CS_SP.torqueInterceptorReady:
+      ti = bool(self.CP.flags & MazdaFlags.TORQUE_INTERCEPTOR)
+      # TI routinely drops out of RUN at low speed/standstill (steering-current
+      # self-protection) and recovers on roll-out; only a sustained not-ready at
+      # real speed is a genuine fault worth naming.
+      if ti and not CS_SP.torqueInterceptorReady and CS.vEgo > 10:
+        self.ti_not_ready_frames += 1
+      else:
+        self.ti_not_ready_frames = 0
+      if self.ti_not_ready_frames > 200:  # ~2 s above 36 kph
         events_sp.add(EventNameSP.torqueInterceptorNotReady)
 
     return events_sp

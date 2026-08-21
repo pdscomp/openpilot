@@ -14,18 +14,45 @@ def _mazda_cp(ti: bool) -> structs.CarParams:
   return CP
 
 
-def test_ti_not_ready_event_raises_when_feedback_unhealthy():
+def _cs(vEgo: float) -> structs.CarState:
+  return structs.CarState(vEgo=vEgo)
+
+
+def _sp(ready: bool):
+  return custom.CarStateSP.new_message(torqueInterceptorReady=ready)
+
+
+def test_ti_not_ready_event_raises_when_unhealthy_at_speed_sustained():
   cse = CarSpecificEventsSP(_mazda_cp(ti=True), structs.CarParamsSP())
-  cs_sp = custom.CarStateSP.new_message(torqueInterceptorReady=False)
-  events_sp = cse.update(structs.CarState(), cs_sp, Events())
-  assert events_sp.has(EventNameSP.torqueInterceptorNotReady)
+  for _ in range(200):
+    assert not cse.update(_cs(20.0), _sp(False), Events()).has(EventNameSP.torqueInterceptorNotReady)
+  assert cse.update(_cs(20.0), _sp(False), Events()).has(EventNameSP.torqueInterceptorNotReady)
 
 
 def test_ti_not_ready_event_stays_clear_when_healthy_or_feature_off():
-  cs_sp_ready = custom.CarStateSP.new_message(torqueInterceptorReady=True)
   cse = CarSpecificEventsSP(_mazda_cp(ti=True), structs.CarParamsSP())
-  assert not cse.update(structs.CarState(), cs_sp_ready, Events()).has(EventNameSP.torqueInterceptorNotReady)
+  for _ in range(300):
+    assert not cse.update(_cs(20.0), _sp(True), Events()).has(EventNameSP.torqueInterceptorNotReady)
 
-  cs_sp_unready = custom.CarStateSP.new_message(torqueInterceptorReady=False)
   cse = CarSpecificEventsSP(_mazda_cp(ti=False), structs.CarParamsSP())
-  assert not cse.update(structs.CarState(), cs_sp_unready, Events()).has(EventNameSP.torqueInterceptorNotReady)
+  for _ in range(300):
+    assert not cse.update(_cs(20.0), _sp(False), Events()).has(EventNameSP.torqueInterceptorNotReady)
+
+
+def test_ti_not_ready_stays_silent_at_low_speed_and_standstill():
+  # TI drops out of RUN at low speed/standstill by design (self-protection);
+  # that must never raise the fault alert
+  cse = CarSpecificEventsSP(_mazda_cp(ti=True), structs.CarParamsSP())
+  for v in (0.0, 5.0, 9.9, 10.0):
+    for _ in range(300):
+      assert not cse.update(_cs(v), _sp(False), Events()).has(EventNameSP.torqueInterceptorNotReady)
+
+
+def test_ti_not_ready_counter_resets_on_recovery():
+  cse = CarSpecificEventsSP(_mazda_cp(ti=True), structs.CarParamsSP())
+  for _ in range(150):
+    cse.update(_cs(20.0), _sp(False), Events())
+  cse.update(_cs(20.0), _sp(True), Events())  # brief recovery
+  for _ in range(200):
+    assert not cse.update(_cs(20.0), _sp(False), Events()).has(EventNameSP.torqueInterceptorNotReady)
+  assert cse.update(_cs(20.0), _sp(False), Events()).has(EventNameSP.torqueInterceptorNotReady)
