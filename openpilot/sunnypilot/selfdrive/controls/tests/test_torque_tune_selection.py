@@ -27,11 +27,13 @@ from openpilot.sunnypilot.selfdrive.controls.controlsd_ext import ControlsExt
 
 V0 = "v0"
 V1 = "v1"  # stands in for the `lac` upstream controller controlsd passes in
+V2 = "v2"
 
 
 @pytest.fixture
 def ctx(monkeypatch):
   monkeypatch.setattr(controlsd_ext, "LatControlTorqueV0", lambda *a, **k: V0)
+  monkeypatch.setattr(controlsd_ext, "LatControlTorqueV2", lambda *a, **k: V2)
   with OpenpilotPrefix():
     params = Params()
     CP = car.CarParams.new_message(steerControlType="torque")
@@ -53,7 +55,7 @@ class TestTorqueTuneSelection:
     params.remove("TorqueControlTune")
     assert select(controls) == V0
 
-  @pytest.mark.parametrize(("version", "expected"), [(0.0, V0), (1.0, V1)])
+  @pytest.mark.parametrize(("version", "expected"), [(0.0, V0), (1.0, V1), (2.0, V2)])
   def test_explicit_version_is_honored(self, ctx, version, expected):
     params, controls = ctx
     params.put_bool("EnforceTorqueControl", True, block=True)
@@ -79,3 +81,90 @@ class TestTorqueTuneSelection:
     params.put_bool("EnforceTorqueControl", True, block=True)
     params.remove("TorqueControlTune")
     assert (select(controls) == V0) is (shown_version == 0.0)
+
+
+class _ExtStub:
+  """LatControlTorqueExt stand-in: pass-through, never overrides output."""
+  def __init__(self, *a, **k):
+    self.overrides_output = False
+  def update_override_torque_params(self, torque_params):
+    return False
+  def update_limits(self):
+    pass
+  def update(self, CS, VM, pid, params, ff, pid_log, setpoint, measurement, *a):
+    return pid_log, 0.0
+
+
+@pytest.fixture
+def v2_lac(monkeypatch):
+  """Real LatControlTorque v2 with the extension stubbed out (identity torque<->lataccel maps)."""
+  from openpilot.sunnypilot.selfdrive.controls.lib import latcontrol_torque_v2
+  monkeypatch.setattr(latcontrol_torque_v2, "LatControlTorqueExt", _ExtStub)
+  CP = car.CarParams.new_message(steerControlType="torque")
+  CP.lateralTuning.init('torque')
+  CI = SimpleNamespace(torque_from_lateral_accel=lambda: (lambda la, tp: la),
+                       lateral_accel_from_torque=lambda: (lambda t, tp: t))
+  lac = latcontrol_torque_v2.LatControlTorque(CP.as_reader(), custom.CarParamsSP.new_message().as_reader(), CI, 0.01)
+  return lac, latcontrol_torque_v2
+
+
+def _drive(lac, desired_curvature, frames=1, steering_pressed=False, v_ego=20.0):
+  CS = SimpleNamespace(vEgo=v_ego, steeringAngleDeg=0.0, steeringPressed=steering_pressed)
+  VM = SimpleNamespace(calc_curvature=lambda angle, v, roll: angle)
+  params = SimpleNamespace(angleOffsetDeg=0.0, roll=0.0)
+  logs = [lac.update(True, CS, VM, params, False, desired_curvature, None, False, 0.2)[2] for _ in range(frames)]
+  return logs
+
+
+class TestTorqueV2Dampers:
+  def test_desired_jerk_is_clamped(self, v2_lac):
+    """A 4 m/s^2 step at 0.2 s delay is raw 20 m/s^3 jerk; v2 must never log above the clip."""
+    lac, mod = v2_lac
+    logs = _drive(lac, 0.01, frames=50)  # 0.01 * 20^2 = 4 m/s^2
+    assert max(l.desiredLateralJerk for l in logs) <= mod.MAX_LAT_JERK_UP + 1e-9
+    assert max(l.desiredLateralJerk for l in logs) > 1.0  # clamp engaged, not just dead
+
+  def test_v0_same_step_exceeds_clip(self, v2_lac):
+    """Discrimination check: v0's unclamped jerk on the same step is ~20 m/s^3."""
+    _, mod2 = v2_lac
+    import openpilot.sunnypilot.selfdrive.controls.lib.latcontrol_torque_v0 as v0mod
+    orig = v0mod.LatControlTorqueExt
+    v0mod.LatControlTorqueExt = _ExtStub
+    try:
+      CP = car.CarParams.new_message(steerControlType="torque")
+      CP.lateralTuning.init('torque')
+      CI = SimpleNamespace(torque_from_lateral_accel=lambda: (lambda la, tp: la),
+                           lateral_accel_from_torque=lambda: (lambda t, tp: t))
+      lac0 = v0mod.LatControlTorque(CP.as_reader(), custom.CarParamsSP.new_message().as_reader(), CI, 0.01)
+      logs = _drive(lac0, 0.01, frames=1)
+      assert logs[0].desiredLateralJerk > 4 * mod2.MAX_LAT_JERK_UP
+    finally:
+      v0mod.LatControlTorqueExt = orig
+
+  def test_integrator_decays_on_override_release(self, v2_lac):
+    lac, mod = v2_lac
+    _drive(lac, 0.0005, frames=30)  # gentle curve: p+ff stays under the limit so i accumulates
+    assert abs(lac.pid.i) > 0
+    _drive(lac, 0.0005, frames=2, steering_pressed=True)  # freeze while pressed
+    i_before = lac.pid.i
+    release_log = _drive(lac, 0.0005, frames=1)[0]  # release edge decays, then frame integrates
+    expected = mod.STEER_RELEASE_I_DECAY * i_before + mod.KI * 0.01 * release_log.error
+    assert lac.pid.i == pytest.approx(expected, rel=1e-6)
+
+  def test_integrator_freezes_during_unwind(self, v2_lac):
+    """Setpoint unwinding fast through near-zero accel must freeze the integrator."""
+    lac, mod = v2_lac
+    # craft an unwind frame: filtered jerk strongly negative, setpoint crossing near zero
+    lac.jerk_filter.x = -mod.MAX_LAT_JERK_UP
+    lac.prev_desired_lateral_accel = 0.25
+    lac.lat_accel_request_buffer.clear()
+    lac.lat_accel_request_buffer.extend([0.25] * lac.lat_accel_request_buffer_len)
+    lac.pid.i = 1.0
+    _drive(lac, 0.25 / 20.0 ** 2)  # future == expected == 0.25 -> raw jerk ~0, filter stays near clip
+    assert lac.pid.i == 1.0  # frozen: unwind detected
+    # control: let the jerk filter settle near 0, then the same frame integrates normally
+    lac.pid.i = 0.05
+    for _ in range(150):
+      _drive(lac, 0.25 / 20.0 ** 2)
+      lac.prev_desired_lateral_accel = 0.25
+    assert lac.pid.i != 0.05
