@@ -17,7 +17,9 @@ StarPilot is MIT-licensed (fork of FrogAi/FrogPilot); dampers credited to firest
   4. Unwind freeze: integrator freezes while the setpoint unwinds through near-zero
      accel, stopping the I-term pumping back and forth through center.
 
-Gains are unchanged from v0 (KP 1.0 / KI 0.3) — the dampers are the experiment.
+Gains match StarPilot v2's generic path (KP 0.6 / KI 0.35) — the CX-8 owner's
+confirmed-good StarPilot config, reported alongside the same lataccel/friction/
+steer-ratio values this port already ships.
 Note: v0's measurement-rate filter constant (LP_FILTER_CUTOFF_HZ) is kept rather than
 StarPilot's (1/(2*pi*(MAX_LAT_JERK_UP-0.5))) — the clip is the damper, and our
 measurement path was already tuned around the 1.2 Hz filter.
@@ -46,8 +48,8 @@ from openpilot.sunnypilot.selfdrive.controls.lib.latcontrol_torque_ext import La
 # Additionally, there is friction in the steering wheel that needs
 # to be overcome to move it at all, this is compensated for too.
 
-KP = 1.0
-KI = 0.3
+KP = 0.6
+KI = 0.35
 KD = 0.0
 INTERP_SPEEDS = [1, 1.5, 2.0, 3.0, 5, 7.5, 10, 15, 30]
 KP_INTERP = [250, 120, 65, 30, 11.5, 5.5, 3.5, 2.0, KP]
