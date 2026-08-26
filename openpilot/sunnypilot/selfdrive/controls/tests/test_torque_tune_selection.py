@@ -117,6 +117,13 @@ def _drive(lac, desired_curvature, frames=1, steering_pressed=False, v_ego=20.0)
 
 
 class TestTorqueV2Dampers:
+  def test_gains_match_starpilot_generic_path(self, v2_lac):
+    """Pins the deliberate v0 divergence: KP 0.6 / KI 0.35 (StarPilot v2 generic, CX-8 owner-confirmed)."""
+    lac, mod = v2_lac
+    assert (mod.KP, mod.KI) == (0.6, 0.35)
+    lac.pid.speed = 30.0  # top of the interp schedule = steady-state KP
+    assert lac.pid.k_p == 0.6
+
   def test_desired_jerk_is_clamped(self, v2_lac):
     """A 4 m/s^2 step at 0.2 s delay is raw 20 m/s^3 jerk; v2 must never log above the clip."""
     lac, mod = v2_lac
