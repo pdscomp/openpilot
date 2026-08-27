@@ -37,6 +37,16 @@ class ControlsExt(ModelStateBase):
 
   def initialize_lateral_control(self, lac, CI, dt):
     enforce_torque_control = self.params.get_bool("EnforceTorqueControl")
+    # TI cars default to tune v2, plus the torque-control enforcement the version
+    # resolution hangs off of (without it every Mazda is pinned to v0 below).
+    # Seeds fire only while the param is UNSET — an explicit user pick (including
+    # enforce-off, or any tune version) is a set param and always persists.
+    if self.params.get_bool("TorqueInterceptorEnabled"):
+      if self.params.get("EnforceTorqueControl") is None:
+        self.params.put_bool("EnforceTorqueControl", True, block=True)
+        enforce_torque_control = True
+      if self.params.get("TorqueControlTune") is None:
+        self.params.put("TorqueControlTune", 2.0, block=True)
     # return_default: params_keys.h declares 0.0 (v0) as the default, and an unset param would
     # otherwise read as None and fall through to the newest tune
     torque_versions = self.params.get("TorqueControlTune", return_default=True)

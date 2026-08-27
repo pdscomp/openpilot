@@ -83,6 +83,44 @@ class TestTorqueTuneSelection:
     assert (select(controls) == V0) is (shown_version == 0.0)
 
 
+class TestTorqueTuneTiSeed:
+  """TI cars get v2 + torque-control enforcement seeded once; explicit picks persist."""
+
+  def test_ti_on_unset_seeds_v2_and_enforce(self, ctx):
+    params, controls = ctx
+    params.put_bool("TorqueInterceptorEnabled", True, block=True)
+    assert select(controls) == V2
+    assert params.get_bool("EnforceTorqueControl") is True
+    assert params.get("TorqueControlTune", return_default=True) == 2.0  # seed persisted
+
+  def test_ti_on_explicit_v0_persists(self, ctx):
+    params, controls = ctx
+    params.put_bool("TorqueInterceptorEnabled", True, block=True)
+    params.put("TorqueControlTune", 0.0, block=True)
+    assert select(controls) == V0
+    assert params.get("TorqueControlTune", return_default=True) == 0.0
+
+  def test_ti_on_explicit_v1_persists(self, ctx):
+    params, controls = ctx
+    params.put_bool("TorqueInterceptorEnabled", True, block=True)
+    params.put("TorqueControlTune", 1.0, block=True)
+    assert select(controls) == V1
+
+  def test_ti_on_enforce_explicitly_off_stays_off(self, ctx):
+    """A user who explicitly disabled enforcement keeps it — the v0 pin then applies."""
+    params, controls = ctx
+    params.put_bool("TorqueInterceptorEnabled", True, block=True)
+    params.put_bool("EnforceTorqueControl", False, block=True)
+    assert select(controls) == V0
+    assert params.get_bool("EnforceTorqueControl") is False
+
+  def test_ti_off_unset_seeds_nothing(self, ctx):
+    params, controls = ctx
+    assert select(controls) == V0
+    assert params.get("TorqueControlTune") is None
+    assert params.get("EnforceTorqueControl") is None
+
+
 class _ExtStub:
   """LatControlTorqueExt stand-in: pass-through, never overrides output."""
   def __init__(self, *a, **k):
