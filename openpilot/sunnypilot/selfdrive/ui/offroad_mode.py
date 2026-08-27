@@ -1,4 +1,10 @@
-"""Force-offroad ("Always Offroad") request path.
+"""
+Copyright (c) 2026-, Zeph Leggett.
+
+This file is part of zoompilot and is licensed under the MIT License.
+See the LICENSE.md file in the root directory for more details.
+
+Force-offroad ("Always Offroad") request path.
 
 Entering offroad is deferred through OffroadModeRequested: card runs the stock-ECU
 hand-back first and then grants OffroadMode (see

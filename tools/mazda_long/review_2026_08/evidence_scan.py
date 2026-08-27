@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""One-pass evidence scan for the three corrections:
+"""
+Copyright (c) 2026-, Zeph Leggett.
+
+This file is part of zoompilot and is licensed under the MIT License.
+See the LICENSE.md file in the root directory for more details.
+
+One-pass evidence scan for the three corrections:
   #2: 0x25d (CAM_PEDESTRIAN) signal activation census + 0x21d activations
   #1: button edges vs PEDALS.ACC_ACTIVE engagement/disengagement edges
   #3: 0x764/0x76C UDS request/response traffic in our alpha-long drives

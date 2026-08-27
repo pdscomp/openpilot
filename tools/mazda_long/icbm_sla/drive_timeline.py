@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Compact SLA/ICBM timeline from a drive's rlogs.
+"""
+Copyright (c) 2026-, Zeph Leggett.
+
+This file is part of zoompilot and is licensed under the MIT License.
+See the LICENSE.md file in the root directory for more details.
+
+Compact SLA/ICBM timeline from a drive's rlogs.
 
 Usage: python tools/mazda_long/icbm_sla/drive_timeline.py <route_dir_glob> [t_start] [t_end]
 Prints one line per "interesting" frame: SLA state changes, ICBM state/button changes,

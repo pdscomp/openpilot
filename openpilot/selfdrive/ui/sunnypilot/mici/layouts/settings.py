@@ -17,12 +17,22 @@ from openpilot.selfdrive.ui.sunnypilot.mici.layouts.sunnylink import SunnylinkLa
 from openpilot.selfdrive.ui.sunnypilot.mici.layouts.trips import TripsLayoutMici
 from openpilot.selfdrive.ui.sunnypilot.mici.layouts.visuals import VisualsLayoutMici
 from openpilot.selfdrive.ui.ui_state import ui_state
-from openpilot.system.ui.lib.application import gui_app
+from openpilot.system.ui.lib.application import gui_app, FontWeight
 from openpilot.system.ui.lib.multilang import tr
 from openpilot.sunnypilot.selfdrive.ui.offroad_mode import request_offroad_mode
 
 SP_ICON = "../../sunnypilot/selfdrive/assets/offroad"
 BIG_ICON_SIZE = 110
+
+
+class SunnylinkBigButton(SettingsBigButton):
+  def __init__(self, *args, **kwargs):
+    super().__init__(*args, **kwargs)
+    self._label.set_font_weight(FontWeight.AUDIOWIDE)
+
+  def _get_label_font_size(self):
+    # Audiowide runs wider than Inter: "sunnylink" wraps to two lines at 64
+    return 56
 
 
 class SettingsLayoutSP(OP.SettingsLayout):
@@ -39,7 +49,6 @@ class SettingsLayoutSP(OP.SettingsLayout):
     self.icon_offroad_slider = gui_app.texture("icons_mici/settings/device/lkas.png", BIG_ICON_SIZE, BIG_ICON_SIZE)
 
     panels = [
-      (tr("sunnylink"), SunnylinkLayoutMici, gui_app.texture("icons_mici/settings/developer/ssh.png", 56, 64)),
       (tr("models"),    ModelsLayoutMici,    gui_app.texture(f"{SP_ICON}/icon_models.png", 64, 64)),
       (tr("cruise"),    CruiseLayoutMici,    gui_app.texture(f"{SP_ICON}/icon_vehicle.png", 64, 64)),
       (tr("steering"),  SteeringLayoutMici,  gui_app.texture(f"{SP_ICON}/icon_lateral.png", 64, 64)),
@@ -54,6 +63,10 @@ class SettingsLayoutSP(OP.SettingsLayout):
       btn = SettingsBigButton(label, "", icon)
       btn.set_click_callback(lambda p=panel: gui_app.push_widget(p))
       sp_buttons.append(btn)
+
+    sunnylink_panel = SunnylinkLayoutMici()
+    sunnylink_btn = SunnylinkBigButton(tr("sunnylink"), "", gui_app.texture("../../sunnypilot/selfdrive/assets/icons_mici/sunnylink.png", 76, 44))
+    sunnylink_btn.set_click_callback(lambda: gui_app.push_widget(sunnylink_panel))
 
     # onroad: enable button sits at the front (left of toggles)
     self._enable_offroad_btn_onroad = BigCircleButton(self.icon_offroad_enable, red=True)
@@ -72,6 +85,9 @@ class SettingsLayoutSP(OP.SettingsLayout):
     items = self._scroller._items.copy()
     for i, btn in enumerate(sp_buttons):
       items.insert(1 + i, btn)
+    # sunnylink sits right after software (base order: toggles, network, device,
+    # software, pair, firehose, developer, shifted by the sp panels above)
+    items.insert(len(sp_buttons) + 4, sunnylink_btn)
 
     # front slots (only one ever visible at a time): exit-always-offroad, then enable-onroad
     items.insert(0, self._enable_offroad_btn_onroad)

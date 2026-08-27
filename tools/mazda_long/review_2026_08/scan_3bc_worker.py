@@ -1,6 +1,13 @@
 #!/usr/bin/env python3
-"""Per-file worker: emits raw records.
-CENSUS file b0 count | VIOL file t b0 nframes | ENG file t gapf gapt btns | NOBTN file t"""
+"""
+Copyright (c) 2026-, Zeph Leggett.
+
+This file is part of zoompilot and is licensed under the MIT License.
+See the LICENSE.md file in the root directory for more details.
+
+Per-file worker: emits raw records.
+CENSUS file b0 count | VIOL file t b0 nframes | ENG file t gapf gapt btns | NOBTN file t
+"""
 import sys, collections
 sys.path.insert(0, "/Users/zeph/Developer/experiments/sunnypilot_proj/sunnypilot")
 from openpilot.tools.lib.logreader import LogReader

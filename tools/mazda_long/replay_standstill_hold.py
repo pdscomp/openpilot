@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Replay recorded stop-and-go episodes through the real CarController.
+"""
+Copyright (c) 2026-, Zeph Leggett.
+
+This file is part of zoompilot and is licensed under the MIT License.
+See the LICENSE.md file in the root directory for more details.
+
+Replay recorded stop-and-go episodes through the real CarController.
 
 Feeds each logged frame's plan output and car state into update_longitudinal and reports the
 CRZ_INFO command that would go on the wire, so a hold regression shows up as the command

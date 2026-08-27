@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Replay logged drives through the v0 and v2 torque tunes with speed-dependent torque
+"""
+Copyright (c) 2026-, Zeph Leggett.
+
+This file is part of zoompilot and is licensed under the MIT License.
+See the LICENSE.md file in the root directory for more details.
+
+Replay logged drives through the v0 and v2 torque tunes with speed-dependent torque
 enabled, reporting what the v2 mechanisms change on real CX-5 inputs.
 
 Variants:

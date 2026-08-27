@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Replay logged drives through LatControlTorqueV0 with the Lateral Jerk Torque Controller and
+"""
+Copyright (c) 2026-, Zeph Leggett.
+
+This file is part of zoompilot and is licensed under the MIT License.
+See the LICENSE.md file in the root directory for more details.
+
+Replay logged drives through LatControlTorqueV0 with the Lateral Jerk Torque Controller and
 speed-dependent torque both enabled, comparing the fixed extension against the as-shipped
 (2026-08-09, #693) behavior.
 

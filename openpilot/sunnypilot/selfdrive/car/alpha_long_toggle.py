@@ -1,4 +1,10 @@
-"""Onroad orchestration for the AlphaLongitudinalEnabled toggle and force-offroad.
+"""
+Copyright (c) 2026-, Zeph Leggett.
+
+This file is part of zoompilot and is licensed under the MIT License.
+See the LICENSE.md file in the root directory for more details.
+
+Onroad orchestration for the AlphaLongitudinalEnabled toggle and force-offroad.
 
 The alpha-long param is read once at fingerprint, so applying a change requires an
 onroad cycle. The UI only writes the param; card owns the cycle request so brands that

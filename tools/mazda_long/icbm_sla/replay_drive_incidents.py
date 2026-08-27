@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Regression replay: drive 0000000b--b039e84091 (2026-07-26) against the cruise arbiter.
+"""
+Copyright (c) 2026-, Zeph Leggett.
+
+This file is part of zoompilot and is licensed under the MIT License.
+See the LICENSE.md file in the root directory for more details.
+
+Regression replay: drive 0000000b--b039e84091 (2026-07-26) against the cruise arbiter.
 
 That drive, recorded on the shipped build, contains every reported SLA jank in one route:
 

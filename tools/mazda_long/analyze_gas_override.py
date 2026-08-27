@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""What does stock MRCC do while the driver overrides with the gas pedal?
+"""
+Copyright (c) 2026-, Zeph Leggett.
+
+This file is part of zoompilot and is licensed under the MIT License.
+See the LICENSE.md file in the root directory for more details.
+
+What does stock MRCC do while the driver overrides with the gas pedal?
 
 Alpha long drops CC.longActive the moment PEDAL_GAS leaves zero (gasPressedOverride),
 which zeroes ACCEL_CMD and clears ACC_ACTIVE/CRZ_ACTIVE. This measures what the stock

@@ -1,4 +1,11 @@
-"""Replay route fe segs 6-7 through the NEW CarController; show the release escort."""
+"""
+Copyright (c) 2026-, Zeph Leggett.
+
+This file is part of zoompilot and is licensed under the MIT License.
+See the LICENSE.md file in the root directory for more details.
+
+Replay route fe segs 6-7 through the NEW CarController; show the release escort.
+"""
 import sys, os
 sys.path.insert(0, "/Users/zeph/Developer/experiments/sunnypilot_proj/sunnypilot")
 sys.path.insert(0, "/Users/zeph/Developer/experiments/sunnypilot_proj/sunnypilot/opendbc_repo")

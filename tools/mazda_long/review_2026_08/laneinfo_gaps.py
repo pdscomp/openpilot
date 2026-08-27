@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Distribution of CAM_LANEINFO (0x440 src2) inter-frame gaps across segments."""
+"""
+Copyright (c) 2026-, Zeph Leggett.
+
+This file is part of zoompilot and is licensed under the MIT License.
+See the LICENSE.md file in the root directory for more details.
+
+Distribution of CAM_LANEINFO (0x440 src2) inter-frame gaps across segments.
+"""
 import sys, glob
 sys.path.insert(0, "/Users/zeph/Developer/experiments/sunnypilot_proj/sunnypilot")
 from openpilot.tools.lib.logreader import LogReader

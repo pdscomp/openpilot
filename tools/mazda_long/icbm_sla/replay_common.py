@@ -1,4 +1,10 @@
-"""Shared harness for the SLA/arbiter rlog replays.
+"""
+Copyright (c) 2026-, Zeph Leggett.
+
+This file is part of zoompilot and is licensed under the MIT License.
+See the LICENSE.md file in the root directory for more details.
+
+Shared harness for the SLA/arbiter rlog replays.
 
 Builds a CruiseArbiter as card would and streams recorded frames through it:
 carControl carries engagement, longitudinalPlanSP carries the resolver limits, and

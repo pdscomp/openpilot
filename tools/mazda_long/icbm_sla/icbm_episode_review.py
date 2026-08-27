@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Real-world ICBM servo review over a drive's rlogs.
+"""
+Copyright (c) 2026-, Zeph Leggett.
+
+This file is part of zoompilot and is licensed under the MIT License.
+See the LICENSE.md file in the root directory for more details.
+
+Real-world ICBM servo review over a drive's rlogs.
 
 Segments the drive into servo episodes (contiguous increasing/decreasing state) and
 measures what the ECU actually did with our emissions:

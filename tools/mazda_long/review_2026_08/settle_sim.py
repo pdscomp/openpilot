@@ -1,7 +1,14 @@
 #!/usr/bin/env python3
-"""Simulate cam_laneinfo_fresh / fsc_settled against real can batches.
+"""
+Copyright (c) 2026-, Zeph Leggett.
+
+This file is part of zoompilot and is licensed under the MIT License.
+See the LICENSE.md file in the root directory for more details.
+
+Simulate cam_laneinfo_fresh / fsc_settled against real can batches.
 Counts can-log-events (approx carstate updates) between 0x440 src2 arrivals,
-plus NO_ERR_BIT/ERR_BIT decode (byte0? check DBC) to see if settled can hold 1000 frames."""
+plus NO_ERR_BIT/ERR_BIT decode (byte0? check DBC) to see if settled can hold 1000 frames.
+"""
 import sys
 sys.path.insert(0, "/Users/zeph/Developer/experiments/sunnypilot_proj/sunnypilot")
 from openpilot.tools.lib.logreader import LogReader

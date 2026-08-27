@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""What alpha long does when the driver taps the gas, from our own engaged drives.
+"""
+Copyright (c) 2026-, Zeph Leggett.
+
+This file is part of zoompilot and is licensed under the MIT License.
+See the LICENSE.md file in the root directory for more details.
+
+What alpha long does when the driver taps the gas, from our own engaged drives.
 
 Companion to analyze_gas_override.py (which measures stock MRCC). Reports the commanded
 accel, longActive, and cruise engagement across each gas press so the two can be compared

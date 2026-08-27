@@ -1,5 +1,12 @@
-"""Replay route 4d segs 3-4 (t+180-240) through the NEW CarController: does the lead survive
-the driver-gas drive-off and the disengage at t+212.4?"""
+"""
+Copyright (c) 2026-, Zeph Leggett.
+
+This file is part of zoompilot and is licensed under the MIT License.
+See the LICENSE.md file in the root directory for more details.
+
+Replay route 4d segs 3-4 (t+180-240) through the NEW CarController: does the lead survive
+the driver-gas drive-off and the disengage at t+212.4?
+"""
 import sys, os, glob
 sys.path.insert(0, "/Users/zeph/Developer/experiments/sunnypilot_proj/sunnypilot")
 sys.path.insert(0, "/Users/zeph/Developer/experiments/sunnypilot_proj/sunnypilot/opendbc_repo")

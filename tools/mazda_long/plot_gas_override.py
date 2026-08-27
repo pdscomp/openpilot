@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Timeline of a single alpha-long gas override: command, engaged bits, and what the car did.
+"""
+Copyright (c) 2026-, Zeph Leggett.
+
+This file is part of zoompilot and is licensed under the MIT License.
+See the LICENSE.md file in the root directory for more details.
+
+Timeline of a single alpha-long gas override: command, engaged bits, and what the car did.
 
 Usage: .venv/bin/python3 tools/mazda_long/plot_gas_override.py <route> [t_center] [out.png]
 """

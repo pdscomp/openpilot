@@ -1,8 +1,15 @@
 #!/usr/bin/env python3
-"""3d: run the real AdvertisedLead over route_4d vision-lead stream.
+"""
+Copyright (c) 2026-, Zeph Leggett.
+
+This file is part of zoompilot and is licensed under the MIT License.
+See the LICENSE.md file in the root directory for more details.
+
+3d: run the real AdvertisedLead over route_4d vision-lead stream.
 - disengage-with-lead events: how long does leadVisible persist after
 - coast episodes (visible but leadOne zeroed): length + advertised d trajectory
-- any advertised d <= 0 or > 200 m"""
+- any advertised d <= 0 or > 200 m
+"""
 import sys, os
 sys.path.insert(0, "/Users/zeph/Developer/experiments/sunnypilot_proj/sunnypilot")
 sys.path.insert(0, "/Users/zeph/Developer/experiments/sunnypilot_proj/sunnypilot/opendbc_repo")

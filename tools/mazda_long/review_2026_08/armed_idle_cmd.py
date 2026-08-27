@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Stock CRZ_INFO ACCEL_CMD while MRCC armed-idle vs main-off vs engaged.
+"""
+Copyright (c) 2026-, Zeph Leggett.
+
+This file is part of zoompilot and is licensed under the MIT License.
+See the LICENSE.md file in the root directory for more details.
+
+Stock CRZ_INFO ACCEL_CMD while MRCC armed-idle vs main-off vs engaged.
 CRZ_INFO 0x21b: ACCEL_CMD 17|13@0+ (0.001,-4.096) -> raw = ((b2)<<5)|(b3>>3) with start bit 17 BE.
 CRZ_CTRL 0x21c: CRZ_ACTIVE bit3 byte0, CRZ_AVAILABLE bit17 -> byte2 bit1.
 """

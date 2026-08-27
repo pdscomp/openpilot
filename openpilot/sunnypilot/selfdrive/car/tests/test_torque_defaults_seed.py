@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Tests for the one-time steer-to-zero Mazda torque-control default seeding."""
+"""
+Copyright (c) 2026-, Zeph Leggett.
+
+This file is part of zoompilot and is licensed under the MIT License.
+See the LICENSE.md file in the root directory for more details.
+
+Tests for the one-time steer-to-zero Mazda torque-control default seeding.
+"""
 
 from opendbc.car.structs import car
 from opendbc.car.mazda.values import MazdaFlags
