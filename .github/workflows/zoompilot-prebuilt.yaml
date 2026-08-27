@@ -85,7 +85,7 @@ jobs:
       - name: Build
         run: |
           export PYTHONPATH="$BUILD_DIR"
-          ./tools/release/release_files.py | sort | uniq | rsync -rRl${RUNNER_DEBUG:+v} --files-from=- . $BUILD_DIR/
+          ./tools/release/release_files.py | xargs -0 cp -pR --parents -t "$BUILD_DIR" --
           cd $BUILD_DIR
           ln -sfn msgq_repo/msgq msgq
           ln -sfn opendbc_repo/opendbc opendbc

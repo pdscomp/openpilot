@@ -19,6 +19,9 @@ class FakeParams:
   def get_bool(self, key):
     return bool(self._store.get(key, False))
 
+  def get(self, key):
+    return self._store.get(key)
+
   def put_bool(self, key, val):
     self._store[key] = bool(val)
 
@@ -74,3 +77,10 @@ class TestMazdaTorqueDefaultsSeed:
     _seed_mazda_torque_defaults(_cx5_eps_cp(), params)
     for key in SEEDED_KEYS:
       assert params.get_bool(key) is False  # not re-seeded
+
+  def test_explicit_off_before_first_seed_is_never_overridden(self):
+    params = FakeParams({"EnforceTorqueControl": False})
+    _seed_mazda_torque_defaults(_cx5_eps_cp(), params)
+    assert params.get_bool("EnforceTorqueControl") is False  # explicit pick wins
+    assert params.get_bool("LiveTorqueParamsToggle") is True  # unset keys still seed
+    assert params.get_bool("MazdaTorqueDefaultsApplied") is True

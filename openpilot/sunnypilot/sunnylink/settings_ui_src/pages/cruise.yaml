@@ -267,3 +267,27 @@ sections:
       - type: capability
         field: has_icbm
         equals: true
+  - key: SmartCruiseDecelOvershoot
+    widget: toggle
+    title: Deceleration Overshoot (Alpha)
+    description: Temporarily set the cruise speed below the Smart Cruise target during slowdowns
+      so the stock ACC delivers the requested deceleration, then restore it as the car slows.
+      Only available on vehicles with a measured ACC response curve.
+    visibility:
+    - type: all
+      conditions:
+      - type: capability
+        field: has_icbm
+        equals: true
+      - type: capability
+        field: brand
+        equals: mazda
+    enablement:
+    - type: all
+      conditions:
+      - type: capability
+        field: has_icbm
+        equals: true
+      - type: capability
+        field: brand
+        equals: mazda

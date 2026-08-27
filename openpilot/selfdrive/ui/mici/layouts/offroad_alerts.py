@@ -11,6 +11,8 @@ from openpilot.common.hardware import HARDWARE
 from openpilot.system.ui.widgets import Widget
 from openpilot.system.ui.widgets.label import UnifiedLabel
 from openpilot.system.ui.widgets.scroller import Scroller
+from openpilot.system.ui.widgets.confirm_dialog import ConfirmDialog
+from openpilot.system.ui.widgets import DialogResult
 from openpilot.system.ui.lib.application import gui_app, FontWeight
 from openpilot.system.ui.lib.multilang import tr
 
@@ -240,8 +242,18 @@ class MiciOffroadAlerts(Scroller):
 
       # Create alert item widget
       alert_item = AlertItem(alert_data)
+      if key == "Offroad_TorqueInterceptorDetected":
+        alert_item.set_click_callback(self._ti_reboot_prompt)
       self.alert_items.append(alert_item)
       self._scroller.add_widget(alert_item)
+
+  def _ti_reboot_prompt(self):
+    def handle_reboot(result):
+      if result == DialogResult.CONFIRM:
+        HARDWARE.reboot()
+    gui_app.push_widget(ConfirmDialog(
+      tr("Reboot now to activate the Torque Interceptor? Choosing Later activates it on the next drive start."),
+      tr("Reboot"), callback=handle_reboot))
 
   def _params_worker(self):
     drop_realtime()

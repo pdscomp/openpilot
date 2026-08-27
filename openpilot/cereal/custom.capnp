@@ -386,6 +386,17 @@ struct CarControlSP @0xa5cd762cd951a455 {
   leadOne @2 :LeadData;
   leadTwo @3 :LeadData;
   intelligentCruiseButtonManagement @4 :IntelligentCruiseButtonManagement;
+  turnAssist @5 :TurnAssist;
+  laneChangeSmoothing @6 :LaneChangeSmoothing;
+
+  struct TurnAssist {
+    holdCurvature @0 :Float32;
+    leadCurvature @1 :Float32;
+  }
+
+  struct LaneChangeSmoothing {
+    jerkFactor @0 :Float32;
+  }
 
   struct Param {
     key @0 :Text;

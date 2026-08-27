@@ -34,7 +34,9 @@ def _load_torque_versions() -> dict:
 
 
 def _build_torque_options(versions: dict) -> list[dict]:
-  options: list[dict] = [{"value": "", "label": "Default"}]
+  # no "Default" placeholder: an unset param resolves through the declared default, so a
+  # separate option would just hide which tune the car actually runs
+  options: list[dict] = []
   parsed: list[tuple[float, str]] = []
   for label, info in versions.items():
     try:

@@ -34,16 +34,17 @@ sys.path.insert(0, str(REPO_ROOT))
 from openpilot.common.prefix import OpenpilotPrefix
 
 
-def load_frames(seg_paths):
-  """Extract per-controlsState-frame inputs from rlogs (100 Hz), forward-filling slower services."""
+def load_frames(seg_paths, keep_model=True):
+  """Extract per-controlsState-frame inputs from rlogs (100 Hz), forward-filling slower
+  services. keep_model=False drops the modelV2 reference from each frame — a run with the
+  extension override controllers off never reads it, and retaining the readers pins every
+  segment's rlog buffer in memory for the whole run."""
   from openpilot.tools.lib.logreader import LogReader
   frames = []
-  ltp_msgs = []
   cs_last = None
   lp_last = None
   model_last = None
   ltp_last = None
-  ltp_seq = 0
   cp_reader = None
   for seg in seg_paths:
     for m in LogReader(str(seg / "rlog.zst")):
@@ -58,8 +59,6 @@ def load_frames(seg_paths):
         model_last = m.modelV2
       elif w == 'lateralTorqueParameters':
         ltp_last = m.lateralTorqueParameters
-        ltp_seq += 1
-        ltp_msgs.append(ltp_last)
       elif w == 'controlsState':
         st = m.controlsState.lateralControlState
         if st.which() != 'torqueState' or cs_last is None or lp_last is None or model_last is None:
@@ -70,7 +69,7 @@ def load_frames(seg_paths):
           steering_angle=cs_last.steeringAngleDeg, steering_rate=cs_last.steeringRateDeg,
           steering_pressed=cs_last.steeringPressed,
           roll=lp_last.roll, angle_offset=lp_last.angleOffsetDeg,
-          model=model_last, ltp=ltp_last, ltp_seq=ltp_seq,
+          model=model_last if keep_model else None, ltp=ltp_last,
           active=ts.active, logged_output=ts.output, logged_i=ts.i,
           desired_curvature=m.controlsState.desiredCurvature,
         ))
@@ -142,7 +141,7 @@ def run_variant(frames, fingerprint, mode: str):
     apply_shipped_behavior(controller)
 
   lat_delay = CP.steerActuatorDelay
-  last_ltp_seq = -1
+  last_ltp = None
   out = {k: [] for k in ('output', 'i', 'ff', 'pos_limit', 'active', 'v_ego', 'logged_output', 'logged_i')}
   for f in frames:
     # controlsd: global filtered params + extension limits, every frame the service is alive
@@ -150,9 +149,9 @@ def run_variant(frames, fingerprint, mode: str):
       controller.update_torque_parameters(f.ltp.latAccelFactorFiltered, f.ltp.latAccelOffsetFiltered, f.ltp.frictionCoefficientFiltered)
       controller.extension.update_limits()
       # controlsd_ext: per-bin values on each new lateralTorqueParameters message
-      if f.ltp_seq != last_ltp_seq:
+      if f.ltp is not last_ltp:
         controller.extension.update_speed_dep_torque(f.ltp)
-        last_ltp_seq = f.ltp_seq
+        last_ltp = f.ltp
     controller.extension.update_model_v2(f.model)
     controller.extension.update_lateral_lag(lat_delay)
 

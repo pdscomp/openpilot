@@ -73,7 +73,9 @@ Something misbehaving on your Mazda? Open an issue on the [tracker](https://gith
 
 ## credits
 
-zoompilot stands on [sunnypilot](https://github.com/sunnypilot/sunnypilot), which stands on [openpilot](https://github.com/commaai/openpilot) by comma.ai. Nearly everything here rides on their work. Star their repos and read their docs.
+zoompilot stands on [sunnypilot](https://github.com/sunnypilot/sunnypilot), which stands on [openpilot](https://github.com/commaai/openpilot) by comma.ai. Most of the code here is theirs. Remote access and dashboards come from [sunnylink](https://www.sunnylink.ai/), a free service paid for by the sunnypilot project. To support them: [sponsor sunnypilot](https://github.com/sponsors/sunnyhaibin), or [buy hardware from comma](https://comma.ai/shop).
+
+---
 
 These features would work on other vehicles and could be upstreamed into sunnypilot or openpilot. I'm slowly working on that, but it's easier to share my own fork in the meantime.
 

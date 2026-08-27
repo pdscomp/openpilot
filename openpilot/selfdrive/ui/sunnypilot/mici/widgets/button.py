@@ -134,10 +134,11 @@ class BigButtonSP(BigButton):
     super()._draw_content(btn_y)
     if self._badge_labels:
       label_x = self._rect.x + self.LABEL_HORIZONTAL_PADDING
-      label_y = btn_y + self.LABEL_VERTICAL_PADDING + self._label.get_content_height(self._width_hint())
+      label_y = btn_y + self.LABEL_VERTICAL_PADDING + self._label.get_content_height(self._title_width_hint())
       sub_label_height = btn_y + self._rect.height - self.LABEL_VERTICAL_PADDING - label_y
       badge_margin = 8
-      self._draw_badges(rl.Rectangle(label_x, label_y + badge_margin, self._width_hint(), sub_label_height - badge_margin))
+      self._draw_badges(rl.Rectangle(label_x, label_y + badge_margin, self._subtitle_width_hint(),
+                                     sub_label_height - badge_margin))
 
   def link_sub_panel(self, items) -> "SubPanelSP":
     """Create a self-refreshing sub-panel with the given items, linked to this button's click."""
@@ -317,8 +318,10 @@ class BigParamOption(BigButton):
     """Create a NumberPickerScreen from this option's config (also used by screenshot tests)."""
     from openpilot.selfdrive.ui.sunnypilot.mici.widgets.number_picker import NumberPickerScreen
     kwargs = {'item_width': self._picker_item_width} if self._picker_item_width else {}
+    # a newline in the button label is a narrow-button layout device; the picker title
+    # has the full screen width, so it renders on one line
     return NumberPickerScreen(
-      title=self.text, param=self._param, min_value=self._min_value, max_value=self._max_value,
+      title=self.text.replace("\n", " "), param=self._param, min_value=self._min_value, max_value=self._max_value,
       step=self._step, label_callback=self._picker_label_callback, value_map=self._value_map,
       float_param=self._float_param, unit=self._picker_unit, **kwargs,
     )

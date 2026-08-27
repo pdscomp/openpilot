@@ -29,21 +29,25 @@ def log_fingerprint(CP: structs.CarParams) -> None:
 def _seed_mazda_torque_defaults(CP: structs.CarParams, params: Params | None = None) -> None:
   """One-time: default the full torque-control stack ON for steer-to-zero Mazdas (2022+ CX-5 EPS).
 
-  Gated on the EPS flag, not minSteerSpeed: TI1 also permits zero-speed steering but must retain
-  its own conservative tune. Seeded once via a marker so the user can still disable these later.
-  TorqueControlTune defaults to 0.0 (== torque learner v0), so it needs no seeding here.
+  Gated on the EPS capability flags, not the model: steer-to-zero EPS without a torque
+  interceptor is the population this seed exists for (TI cars are seeded by the TI seed in
+  controlsd_ext). Seeded once via a marker param so the user can still toggle any of these
+  off later; unset params only — an explicit pick is never overridden.
+  TorqueControlTune defaults to 2.0 (the v2 tune), so it needs no seeding here.
   """
   if params is None:
     params = Params()
 
-  if CP.brand != "mazda" or not (CP.flags & MazdaFlags.STEER_TO_ZERO):
+  if CP.brand != "mazda" or not (CP.flags & MazdaFlags.STEER_TO_ZERO) or (CP.flags & MazdaFlags.TORQUE_INTERCEPTOR):
     return
   if params.get_bool("MazdaTorqueDefaultsApplied"):
     return
 
-  params.put_bool("EnforceTorqueControl", True)     # torque lateral control
-  params.put_bool("LiveTorqueParamsToggle", True)   # self-tune (live torque params)
-  params.put_bool("SpeedDependentTorqueToggle", True)  # per-speed-bin learning
+  for key in ("EnforceTorqueControl",           # torque lateral control
+              "LiveTorqueParamsToggle",         # self-tune (live torque params)
+              "SpeedDependentTorqueToggle"):    # per-speed-bin learning
+    if params.get(key) is None:
+      params.put_bool(key, True)
   params.put_bool("MazdaTorqueDefaultsApplied", True)
   cloudlog.warning("Seeded steer-to-zero Mazda torque-control defaults (EnforceTorqueControl, self-tune, speed-dependent)")
 

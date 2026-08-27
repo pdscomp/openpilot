@@ -4,14 +4,12 @@ Copyright (c) 2021-, Haibin Wen, sunnypilot, and a number of other contributors.
 This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
-import json
 import math
-import os
 from collections.abc import Callable
 import pyray as rl
 
-from openpilot.common.basedir import BASEDIR
 from openpilot.selfdrive.ui.ui_state import ui_state
+from openpilot.sunnypilot.selfdrive.controls.lib.torque_tune import load_versions, resolved_tune_version
 from openpilot.system.ui.lib.application import gui_app, FontWeight
 from openpilot.system.ui.lib.multilang import tr
 from openpilot.system.ui.sunnypilot.lib.utils import NoElideButtonAction
@@ -21,7 +19,6 @@ from openpilot.system.ui.widgets import Widget, DialogResult
 from openpilot.system.ui.widgets.network import NavButton
 from openpilot.system.ui.widgets.scroller_tici import Scroller
 
-TORQUE_VERSIONS_PATH = os.path.join(BASEDIR, "openpilot", "sunnypilot", "selfdrive", "controls", "lib", "latcontrol_torque_versions.json")
 
 
 class TorqueSettingsLayout(Widget):
@@ -36,8 +33,7 @@ class TorqueSettingsLayout(Widget):
     self._scroller = Scroller(items, line_separator=True, spacing=0)
 
   def _load_versions(self):
-    with open(TORQUE_VERSIONS_PATH) as f:
-      self.cached_torque_versions = json.load(f)
+    self.cached_torque_versions = load_versions()
 
   def _initialize_items(self):
     self._jerk_aware_toggle = toggle_item_sp(
@@ -123,7 +119,10 @@ class TorqueSettingsLayout(Widget):
   def _update_state(self):
     super()._update_state()
     nnlc_enabled = ui_state.params.get_bool("NeuralNetworkLateralControl")
-    self._jerk_aware_toggle.action_item.set_enabled(ui_state.is_offroad() and not nnlc_enabled)
+    v2_tune = resolved_tune_version(ui_state.params) == 2.0
+    # v2 tune replaces the jerk-aware mechanisms and forces the controller off, so the
+    # toggle is disabled while v2 is the tune that will actually run
+    self._jerk_aware_toggle.action_item.set_enabled(ui_state.is_offroad() and not nnlc_enabled and not v2_tune)
     if not ui_state.params.get_bool("LiveTorqueParamsToggle"):
       ui_state.params.remove("LiveTorqueParamsRelaxedToggle")
       self._relaxed_tune_toggle.action_item.set_state(False)
@@ -158,19 +157,18 @@ class TorqueSettingsLayout(Widget):
     self._scroller.show_event()
 
   def _get_current_torque_version_label(self):
-    current_val_bytes = ui_state.params.get("TorqueControlTune")
-    if current_val_bytes is None:
-      return tr("Default")
-
+    # unset resolves through the declared param default, the same read controlsd_ext makes:
+    # showing a "Default" placeholder instead would hide which tune the car actually runs
+    current_val_bytes = ui_state.params.get("TorqueControlTune", return_default=True)
     try:
       current_val = float(current_val_bytes)
       for label, info in self.cached_torque_versions.items():
         if math.isclose(float(info["version"]), current_val, rel_tol=1e-5):
           return label
-    except (ValueError, KeyError):
+    except (TypeError, ValueError, KeyError):
       pass
 
-    return tr("Default")
+    return tr("Unknown")
 
   def _show_torque_version_dialog(self):
     options_map = {}
@@ -183,9 +181,7 @@ class TorqueSettingsLayout(Widget):
     # Sort options by label in descending order
     sorted_labels = sorted(options_map.keys(), key=lambda k: options_map[k], reverse=True)
 
-    nodes = [TreeNode(tr("Default"))]
-    for label in sorted_labels:
-      nodes.append(TreeNode(label))
+    nodes = [TreeNode(label) for label in sorted_labels]
 
     folders = [TreeFolder("", nodes)]
 
@@ -194,9 +190,7 @@ class TorqueSettingsLayout(Widget):
     def handle_selection(result: int):
       if result == DialogResult.CONFIRM and self._torque_version_dialog:
         selected_ref = self._torque_version_dialog.selection_ref
-        if selected_ref == tr("Default"):
-          ui_state.params.remove("TorqueControlTune")
-        elif selected_ref in options_map:
+        if selected_ref in options_map:
           ui_state.params.put("TorqueControlTune", options_map[selected_ref])
       self._torque_version_dialog = None
 

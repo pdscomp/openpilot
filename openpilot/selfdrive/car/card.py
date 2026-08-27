@@ -18,6 +18,7 @@ from opendbc.car.can_definitions import CanData, CanRecvCallable, CanSendCallabl
 from opendbc.car.carlog import carlog
 from opendbc.car.fw_versions import ObdCallback
 from opendbc.car.car_helpers import get_car, interfaces
+from opendbc.car.mazda.values import MazdaFlags
 from opendbc.car.interfaces import CarInterfaceBase, RadarInterfaceBase
 from openpilot.selfdrive.pandad import can_capnp_to_list, can_list_to_can_capnp
 from openpilot.selfdrive.car.cruise import VCruiseHelper
@@ -28,6 +29,22 @@ from openpilot.sunnypilot.selfdrive.car import interfaces as sunnypilot_interfac
 from openpilot.sunnypilot.selfdrive.car.alpha_long_toggle import AlphaLongToggleMonitor
 
 REPLAY = "REPLAY" in os.environ
+
+# How long the boot CAN window may run while listening for a TI that never answers
+# (non-TI cars pay this once per card start; TI cars break on first sight, ~ms)
+TI_DETECT_WINDOW_S = 1.5
+
+
+def ti_present(can_packets) -> bool:
+  """GEN1 torque interceptor feedback (0x24A) seen on bus 1 in these CAN packets."""
+  return any(m.address == 0x24A and m.src == 1 for pkt in can_packets for m in pkt.can)
+
+
+def should_auto_enable_ti(ti_seen: bool, CP, params) -> bool:
+  """A TI answering on a GEN1 Mazda means the hardware is installed: enable it, unless the
+  user has an explicit preference either way (param set) or the CX-8 latch covers the car."""
+  return (ti_seen and bool(CP.flags & MazdaFlags.GEN1) and CP.carFingerprint != "MAZDA_CX8_2022"
+          and params.get("TorqueInterceptorEnabled") is None)
 
 EventName = log.OnroadEvent.EventName
 
@@ -93,11 +110,15 @@ class Car:
     is_release_sp = self.params.get_bool("IsReleaseSpBranch")
 
     if CI is None:
-      # wait for one pandaState and one CAN packet
+      # wait for one pandaState and one CAN packet, sniffing the window for a GEN1
+      # torque interceptor (TI_FEEDBACK 0x24A on bus 1, ~50 Hz) so it can be auto-enabled
       print("Waiting for CAN messages...")
+      ti_seen = False
+      can_wait_start = time.monotonic()
       while True:
         can = messaging.recv_one_retry(self.can_sock)
-        if len(can.can) > 0:
+        ti_seen = ti_seen or ti_present([can])
+        if len(can.can) > 0 and (ti_seen or time.monotonic() - can_wait_start > TI_DETECT_WINDOW_S):
           break
 
       alpha_long_allowed = self.params.get_bool("AlphaLongitudinalEnabled")
@@ -123,6 +144,17 @@ class Car:
       if self.CP.carFingerprint == "MAZDA_CX8_2022" and not self.params.get_bool("TorqueInterceptorEnabled"):
         cloudlog.info("card: CX-8 fingerprinted, persisting torque interceptor enablement")
         enable_ti(self.params)
+
+      # Generic GEN1: a TI answering on the bus means the hardware is installed. Auto-enable
+      # only when the user has never touched the toggle (param unset) — explicit off is intent.
+      # The TI driving flag applies next boot (param-driven _initialize_mazda); the offroad
+      # alert offers a reboot-now path. CX-8 is covered unconditionally by the block above.
+      if should_auto_enable_ti(ti_seen, self.CP, self.params):
+        cloudlog.info("card: torque interceptor detected on GEN1, enabling")
+        enable_ti(self.params)
+        self.params.put("Offroad_TorqueInterceptorDetected", {
+          "text": "GEN1 Torque Interceptor detected — TI codepath enabled. A reboot is required to activate it. Tap here to reboot now, or it will apply on the next drive start.",
+        }, block=True)
 
       # continue onto next fingerprinting step in pandad
       self.params.put_bool("FirmwareQueryDone", True, block=True)

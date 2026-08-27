@@ -16,8 +16,49 @@ from openpilot.sunnypilot import PARAMS_UPDATE_PERIOD
 from openpilot.sunnypilot.livedelay.helpers import get_lat_delay
 from openpilot.sunnypilot.modeld_v2.modeld_base import ModelStateBase
 from openpilot.sunnypilot.selfdrive.controls.lib.blinker_pause_lateral import BlinkerPauseLateral
+from openpilot.sunnypilot.selfdrive.controls.lib.lane_change_smoothing import LaneChangeSmoothing
 from openpilot.sunnypilot.selfdrive.controls.lib.latcontrol_torque_v0 import LatControlTorque as LatControlTorqueV0
 from openpilot.sunnypilot.selfdrive.controls.lib.latcontrol_torque_v2 import LatControlTorque as LatControlTorqueV2
+from openpilot.sunnypilot.selfdrive.controls.lib.torque_tune import resolved_tune_version
+from openpilot.sunnypilot.selfdrive.controls.lib.turn_assist import TurnAssistController
+
+
+# TI recommended-settings seeds. Unset params only — explicit user picks persist.
+# Only keys that DIFFER from upstream defaults belong here; unset-only seeding a key to
+# its stock default is a dead write. Stock already covers:
+# LagdToggle=1, LateralJerkTorqueController=0, CustomTorqueParams=0, TorqueParamsOverrideEnabled=0.
+TI_TUNE_SEEDS = {
+  "LiveTorqueParamsToggle": True,       # "Self-Tune": defaults OFF upstream, we want it learning
+  "SpeedDependentTorqueToggle": True,   # "Speed-Dependent Self-Tune": defaults OFF upstream
+  "LaneChangeSmoothing": True,          # "Smooth Lane Changes": defaults OFF upstream
+  "LaneChangeSmoothingPace": 8,         # upstream default 5 (~5.8 s); 8 ≈ 4 s glide
+  "LowSpeedTurnAssist": True,           # TI cars steer at standstill, so low-speed assist works
+}
+# CX-8-only: the lagd learner makes no progress on this platform (calPerc=0 across a 16-min
+# engaged route) and sits on the 0.3 s fallback; owner-validated feel is ~0.1 s total delay.
+# REMOVE if the lagd-stall root cause is fixed — seeded values become "set", so a fix must
+# also clear these two params to re-arm learning.
+TI_TUNE_SEEDS_CX8 = {**TI_TUNE_SEEDS, "LagdToggle": False, "LagdToggleDelay": 0.05}
+
+
+def seed_ti_defaults(params: Params, CP) -> None:
+  """TI cars get torque enforcement plus our recommended lateral defaults, seeded once.
+  Unset params only — anything the user explicitly picked is left alone."""
+  if not params.get_bool("TorqueInterceptorEnabled"):
+    return
+  if params.get("EnforceTorqueControl") is None:
+    # enforcement off pins v0 via the resolver; the tune resolves to the declared 2.0
+    # default once enforced. block=True: resolved_tune_version reads it right after, same call.
+    params.put_bool("EnforceTorqueControl", True, block=True)
+  if CP.carFingerprint == "MAZDA_CX8_2022":
+    seeds = TI_TUNE_SEEDS_CX8
+  elif CP.carFingerprint == "MAZDA_CX5_2022":
+    seeds = TI_TUNE_SEEDS
+  else:
+    return
+  for key, value in seeds.items():
+    if params.get(key) is None:
+      params.put(key, value, block=True)
 
 
 class ControlsExt(ModelStateBase):
@@ -27,6 +68,8 @@ class ControlsExt(ModelStateBase):
     self.params = params
     self._param_update_time: float = 0.0
     self.blinker_pause_lateral = BlinkerPauseLateral()
+    self.turn_assist = TurnAssistController(CP)
+    self.lane_change_smoothing = LaneChangeSmoothing()
 
     cloudlog.info("controlsd_ext is waiting for CarParamsSP")
     self.CP_SP = messaging.log_from_bytes(params.get("CarParamsSP", block=True), custom.CarParamsSP)
@@ -36,28 +79,13 @@ class ControlsExt(ModelStateBase):
     self.pm_services_ext = ['carControlSP']
 
   def initialize_lateral_control(self, lac, CI, dt):
-    enforce_torque_control = self.params.get_bool("EnforceTorqueControl")
-    # TI cars default to tune v2, plus the torque-control enforcement the version
-    # resolution hangs off of (without it every Mazda is pinned to v0 below).
-    # Seeds fire only while the param is UNSET — an explicit user pick (including
-    # enforce-off, or any tune version) is a set param and always persists.
-    if self.params.get_bool("TorqueInterceptorEnabled"):
-      if self.params.get("EnforceTorqueControl") is None:
-        self.params.put_bool("EnforceTorqueControl", True, block=True)
-        enforce_torque_control = True
-      if self.params.get("TorqueControlTune") is None:
-        self.params.put("TorqueControlTune", 2.0, block=True)
-    # return_default: params_keys.h declares 0.0 (v0) as the default, and an unset param would
-    # otherwise read as None and fall through to the newest tune
-    torque_versions = self.params.get("TorqueControlTune", return_default=True)
-    if not enforce_torque_control:
-      if self.CP.lateralTuning.which() == 'torque':
-        return LatControlTorqueV0(self.CP, self.CP_SP, CI, dt)  # FIXME-SP: revert when upstream fixes tuning issues with v1
-      return lac
-
-    if torque_versions == 0.0:  # v0
+    seed_ti_defaults(self.params, self.CP)
+    # the enforce-off v0 forcing and the unset-param default both live in the resolver,
+    # shared with the settings UIs so they gate on the tune that will actually run
+    version = resolved_tune_version(self.params, self.CP.lateralTuning.which() == 'torque')
+    if version == 0.0:  # v0
       return LatControlTorqueV0(self.CP, self.CP_SP, CI, dt)
-    elif torque_versions == 2.0:  # v2 (v0 + StarPilot oscillation dampers)
+    elif version == 2.0:  # v2
       return LatControlTorqueV2(self.CP, self.CP_SP, CI, dt)
     else:
       return lac
@@ -65,6 +93,8 @@ class ControlsExt(ModelStateBase):
   def get_params_sp(self, sm: messaging.SubMaster) -> None:
     if time.monotonic() - self._param_update_time > PARAMS_UPDATE_PERIOD:
       self.blinker_pause_lateral.get_params()
+      self.turn_assist.get_params()
+      self.lane_change_smoothing.get_params()
 
       if self.CP.lateralTuning.which() == 'torque':
         self.lat_delay = get_lat_delay(self.params, sm["lateralDelay"].lateralDelay)
@@ -81,6 +111,19 @@ class ControlsExt(ModelStateBase):
 
     # MADS not available, use stock state to engage
     return bool(sm['selfdriveState'].active)
+
+  def update_lateral_assist(self, sm: messaging.SubMaster, lat_active: bool, new_desired_curvature: float,
+                            prev_desired_curvature: float, current_curvature: float) -> tuple[float, float]:
+    """Low-speed turn assist + lane-change smoothing over the desired curvature,
+    returning (new_desired_curvature, jerk_factor) for clip_curvature. The lateral
+    maneuver mode's scripted commands must pass through the stock clip untouched."""
+    if sm.valid['lateralManeuverPlan']:
+      return new_desired_curvature, 1.0
+    CS = sm['carState']
+    model_v2 = sm['modelV2']
+    new_desired_curvature = self.turn_assist.update(CS, lat_active, model_v2, new_desired_curvature, current_curvature)
+    jerk_factor = self.lane_change_smoothing.update(CS, model_v2, new_desired_curvature, prev_desired_curvature)
+    return new_desired_curvature, jerk_factor
 
   @staticmethod
   def get_lead_data(_lead, src: log.RadarState.LeadData) -> None:
@@ -118,6 +161,11 @@ class ControlsExt(ModelStateBase):
     CC_SP.intelligentCruiseButtonManagement.state = icbm_src.state
     CC_SP.intelligentCruiseButtonManagement.sendButton = icbm_src.sendButton
     CC_SP.intelligentCruiseButtonManagement.vTarget = icbm_src.vTarget
+
+    # lateral assist telemetry, for offline validation of the turn hold and pace clamp
+    CC_SP.turnAssist.holdCurvature = float(self.turn_assist.hold)
+    CC_SP.turnAssist.leadCurvature = float(self.turn_assist.lead_applied)
+    CC_SP.laneChangeSmoothing.jerkFactor = float(self.lane_change_smoothing.arrest_jerk_factor)
 
     return CC_SP
 

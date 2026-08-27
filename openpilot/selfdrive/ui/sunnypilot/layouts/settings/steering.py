@@ -38,7 +38,7 @@ class SteeringLayout(Widget):
 
   def _initialize_items(self):
     self._mads_base_desc = tr("Enable the beloved MADS feature. " +
-                              "Disable toggle to revert back to stock sunnypilot engagement/disengagement.")
+                              "Disable toggle to revert back to stock zoompilot engagement/disengagement.")
     self._mads_limited_desc = tr("This platform supports limited MADS settings.")
     self._mads_full_desc = tr("This platform supports all MADS settings.")
     self._mads_check_compat_desc = tr("Start the vehicle to check vehicle compatibility.")
@@ -72,6 +72,13 @@ class SteeringLayout(Widget):
       description="",
       label_callback=lambda speed: f'{speed} {"km/h" if ui_state.is_metric else "mph"}',
     )
+    self._turn_assist_toggle = toggle_item_sp(
+      param="LowSpeedTurnAssist",
+      title=lambda: tr("Low-Speed Turn Assist"),
+      description=lambda: tr("Steer through slow, signaled turns: hold the wheel wound at intersections and start " +
+                             "turning on time instead of going wide. Active below 10 mph with the turn signal on. " +
+                             "Unavailable while lateral control is paused on blinker."),
+    )
     self._blinker_reengage_delay = option_item_sp(
       param="BlinkerLateralReengageDelay",
       title=lambda: tr("Post-Blinker Delay"),
@@ -84,7 +91,7 @@ class SteeringLayout(Widget):
     self._torque_control_toggle = toggle_item_sp(
       param="EnforceTorqueControl",
       title=lambda: tr("Enforce Torque Lateral Control"),
-      description=lambda: tr("Enable this to enforce sunnypilot to steer with Torque lateral control."),
+      description=lambda: tr("Enable this to enforce zoompilot to steer with Torque lateral control."),
     )
     self._torque_customization_button = simple_button_item_sp(
       button_text=lambda: tr("Customize Torque Params"),
@@ -106,6 +113,8 @@ class SteeringLayout(Widget):
       self._blinker_control_toggle,
       self._blinker_control_options,
       self._blinker_reengage_delay,
+      LineSeparatorSP(40),
+      self._turn_assist_toggle,
       LineSeparatorSP(40),
       self._torque_control_toggle,
       self._torque_customization_button,
@@ -131,6 +140,9 @@ class SteeringLayout(Widget):
     self._mads_settings_button.action_item.set_enabled(ui_state.is_offroad() and self._mads_toggle.action_item.get_state())
     self._blinker_control_options.set_visible(self._blinker_control_toggle.action_item.get_state())
     self._blinker_reengage_delay.set_visible(self._blinker_control_toggle.action_item.get_state())
+    # blinker pause suppresses lateral in exactly the regime turn assist steers in — the
+    # pause wins at runtime, so the toggle reads unavailable while it is on (param kept)
+    self._turn_assist_toggle.action_item.set_enabled(not self._blinker_control_toggle.action_item.get_state())
 
     enforce_torque_enabled = self._torque_control_toggle.action_item.get_state()
     nnlc_enabled = self._nnlc_toggle.action_item.get_state()

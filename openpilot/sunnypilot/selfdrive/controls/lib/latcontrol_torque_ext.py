@@ -13,6 +13,25 @@ class LatControlTorqueExt(NeuralNetworkLateralControl, LatControlTorqueExtOverri
   def __init__(self, lac_torque, CP, CP_SP, CI):
     NeuralNetworkLateralControl.__init__(self, lac_torque, CP, CP_SP, CI)
     LatControlTorqueExtOverride.__init__(self, CP)
+    self._output_overrides_disabled = False
+
+  def disable_output_overrides(self):
+    """Permanently neutralize the override controllers (jerk-aware, NNLC, and any future
+    sibling) for a host controller that owns its own friction shaping and integrator
+    policy. Speed-dependent torque (update_override_torque_params) is unaffected. The
+    caller must re-run the host's update_limits(): an override controller may already
+    have retuned the shared PID to torque-space limits at construction."""
+    self._output_overrides_disabled = True
+
+  @property
+  def overrides_output(self) -> bool:
+    return not self._output_overrides_disabled and super().overrides_output
+
+  def update_limits(self):
+    # the extension's only limit work is the override controllers' torque-space retune
+    if self._output_overrides_disabled:
+      return
+    super().update_limits()
 
   def update(self, CS, VM, pid, params, ff, pid_log, setpoint, measurement, calibrated_pose, roll_compensation,
              desired_lateral_accel, actual_lateral_accel, lateral_accel_deadzone, gravity_adjusted_lateral_accel,
@@ -33,6 +52,9 @@ class LatControlTorqueExt(NeuralNetworkLateralControl, LatControlTorqueExtOverri
     self._gravity_adjusted_lateral_accel = gravity_adjusted_lateral_accel
     self._steer_limited_by_safety = steer_limited_by_safety
     self._output_torque = output_torque
+
+    if self._output_overrides_disabled:
+      return self._pid_log, self._output_torque
 
     self.update_calculations(CS, VM, desired_lateral_accel)
     self.update_jerk_aware_torque_control(CS, roll_compensation, gravity_adjusted_lateral_accel)

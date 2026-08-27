@@ -181,6 +181,15 @@ class TestTorqueOptionGeneration(OpenpilotTestCase):
       f"latcontrol_torque_versions.json not found at {TORQUE_VERSIONS_PATH}"
     )
 
+  def test_no_static_torque_options_in_definition(self):
+    """The injector overwrites TorqueControlTune's options for every consumer, so a static
+    list in settings_ui.json is dead data that silently drifts from the versions file."""
+    with open(DEFINITION_PATH) as f:
+      raw = json.load(f)
+    item = _find_item(raw, "TorqueControlTune")
+    assert item is not None, "TorqueControlTune item must be present"
+    assert "options" not in item, "TorqueControlTune must not carry static options; they come from latcontrol_torque_versions.json"
+
 
 class TestReleaseBranchGates(OpenpilotTestCase):
   @parameterized.expand([

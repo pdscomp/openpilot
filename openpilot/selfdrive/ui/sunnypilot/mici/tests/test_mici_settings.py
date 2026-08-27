@@ -38,6 +38,10 @@ def params(gui):
 
   p = Params()
   ui_state.params = p
+  # on device update_params() runs every frame before anything draws, so attributes it
+  # sets (always_offroad, screensaver_enabled, ...) exist by render time. Without this a
+  # layout reading one of them fails in the test for a reason the device never sees.
+  ui_state.update_params()
   return p
 
 
@@ -157,8 +161,8 @@ class TestMultiParamValueMapping:
     assert w.value == ALC_LABELS[AutoLaneChangeMode.OFF]
     assert params.get("AutoLaneChangeTimer") == AutoLaneChangeMode.OFF
 
-  def test_torque_tune_unset_is_v0(self, params):
-    """params_keys.h declares 0.0 (v0); controlsd_ext reads it with return_default, so the
+  def test_torque_tune_unset_is_v2(self, params):
+    """params_keys.h declares 2.0 (v2); controlsd_ext reads it with return_default, so the
     selector must agree. If these drift, the UI claims a tune the car isn't running."""
     from openpilot.selfdrive.ui.sunnypilot.mici.layouts.steering import SteeringLayoutMici
     from openpilot.selfdrive.ui.sunnypilot.mici.widgets.button import BigMultiParamToggleSP
@@ -168,7 +172,7 @@ class TestMultiParamValueMapping:
 
     params.remove("TorqueControlTune")
     w = BigMultiParamToggleSP("t", "TorqueControlTune", list(versions), values=list(versions.values()))
-    assert versions[w.value] == pytest.approx(0.0)
+    assert versions[w.value] == pytest.approx(2.0)
 
     for label, version in versions.items():
       params.put("TorqueControlTune", version, block=True)
@@ -412,3 +416,87 @@ class TestMadsLimitedCallSignature:
       assert layout._mads_limited is False
     finally:
       ui_state.CP, ui_state.CP_SP = old_cp, old_cp_sp
+
+
+# Everything above drives _update_state() and asserts on widget state, so nothing here ever
+# executed a _draw_content override. That is exactly where the SP widgets reach into upstream
+# internals, and it is how BigButtonSP kept calling BigButton._width_hint() after the
+# 2026-08-24 sync split it into _title_width_hint()/_subtitle_width_hint(): the suite stayed
+# green and the UI died on the first frame with AttributeError. These tests draw.
+
+LAYOUT_TARGETS = [
+  ("cruise", "CruiseLayoutMici"),
+  ("display", "DisplayLayoutMici"),
+  ("models", "ModelsLayoutMici"),
+  ("settings", "SettingsLayoutSP"),
+  ("steering", "SteeringLayoutMici"),
+  ("sunnylink", "SunnylinkLayoutMici"),
+  ("trips", "TripsLayoutMici"),
+  ("visuals", "VisualsLayoutMici"),
+]
+
+
+class TestSubtitleAreaRenders:
+  """BigButtonSP's three subtitle modes are drawn, not stored, so each needs a real frame."""
+
+  def _button(self, **kwargs):
+    from openpilot.selfdrive.ui.sunnypilot.mici.widgets.button import BigButtonSP
+    return BigButtonSP("Lane change", **kwargs)
+
+  def test_badges_render(self, params):
+    btn = self._button()
+    btn.set_badges([("road-edge", "on"), ("bsm-delay", "on")])
+    assert btn._badge_labels == ["road-edge", "bsm-delay"]
+    render(btn)
+
+  def test_wrapped_badges_render(self, params):
+    # more pills than fit on one row exercises the multi-row layout in _draw_badges
+    btn = self._button()
+    btn.set_badges([(f"badge-{i}", "on") for i in range(8)])
+    render(btn)
+
+  def test_disabled_pill_renders(self, params):
+    btn = self._button()
+    btn.set_disabled()
+    assert btn._disabled
+    render(btn)
+
+  def test_plain_value_subtitle_renders(self, params):
+    # upstream's own path: no badges, so _draw_content must fall through to BigButton
+    btn = self._button(value="on")
+    assert btn._badge_labels is None
+    render(btn)
+
+
+class TestLayoutsSurviveRender:
+  """Post-sync guard. A layout that imports and updates cleanly can still crash on draw."""
+
+  @pytest.mark.parametrize(("module", "cls"), LAYOUT_TARGETS)
+  def test_layout_renders(self, params, module, cls):
+    import importlib
+
+    mod = importlib.import_module(f"openpilot.selfdrive.ui.sunnypilot.mici.layouts.{module}")
+    layout = getattr(mod, cls)()
+    render(layout)
+    render(layout)  # second frame: first one only populates the scroller's visible set
+
+  @pytest.mark.parametrize(("module", "cls"), LAYOUT_TARGETS)
+  def test_every_scroller_item_renders(self, params, module, cls):
+    # The scroller culls anything off screen, so rendering the layout alone only proves the
+    # top of the list draws. Draw every item so a break further down cannot hide behind a
+    # scroll position no test ever reaches.
+    import importlib
+
+    mod = importlib.import_module(f"openpilot.selfdrive.ui.sunnypilot.mici.layouts.{module}")
+    layout = getattr(mod, cls)()
+    render(layout)
+    items = layout._scroller.items
+    assert items, f"{cls} rendered no items, so this guard would pass vacuously"
+    for item in items:
+      render(item)
+
+  def test_home_layout_renders(self, params):
+    # the boot screen, and the only SP layout that is not a scroller
+    from openpilot.selfdrive.ui.sunnypilot.mici.layouts.home import MiciHomeLayoutSP
+
+    render(MiciHomeLayoutSP())
