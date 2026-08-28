@@ -118,9 +118,9 @@ def _assert_seeds(params, seeds):
 
 
 class TestTorqueTuneTiSeed:
-  """TI cars get torque enforcement plus the recommended lateral bundle, seeded into unset
-  params only. The CX-8 table additionally parks the (stalled) delay learner at the
-  owner-validated fixed delay."""
+  """TI cars get torque enforcement plus the recommended lateral bundle (incl. NNLC),
+  seeded into unset params only. No delay seeds on either platform — the learner
+  stays stock-default ON and user-changeable."""
 
   def test_ti_on_unset_seeds_enforce_and_resolves_v2(self, ctx):
     params, controls = ctx
@@ -169,27 +169,3 @@ class TestTorqueTuneTiSeed:
     assert params.get_bool("EnforceTorqueControl")
     assert params.get("LiveTorqueParamsToggle") is None
 
-
-class TestPerCarGainOverride:
-  """latcontrol_torque prefers CP.lateralTuning.torque.kp/ki when a platform sets them
-  (the CX-8's owner-validated 0.6/0.35); unset fields keep the module defaults."""
-
-  def _controller(self, kp=0.0, ki=0.0):
-    from openpilot.selfdrive.controls.lib.latcontrol_torque import LatControlTorque
-    CP = car.CarParams.new_message(steerControlType="torque")
-    CP.lateralTuning.init('torque')
-    CP.lateralTuning.torque.kp = kp
-    CP.lateralTuning.torque.ki = ki
-    return LatControlTorque(CP.as_reader(), custom.CarParamsSP.new_message().as_reader(), MagicMock(), 0.01)
-
-  def test_platform_gains_are_used_when_set(self):
-    ctrl = self._controller(kp=0.6, ki=0.35)
-    assert ctrl.pid._k_p[1][-1] == pytest.approx(0.6)
-    assert ctrl.pid._k_i[1][0] == pytest.approx(0.35)
-
-  def test_unset_falls_back_to_module_defaults(self):
-    from openpilot.selfdrive.controls.lib import latcontrol_torque
-    ctrl = self._controller()
-    assert ctrl.pid._k_p[1][-1] == latcontrol_torque.KP
-    assert ctrl.pid._k_i[1][0] == latcontrol_torque.KI
-    assert ctrl.pid._k_p[1][:-1] == latcontrol_torque.KP_INTERP[:-1]  # schedule below the top end untouched
