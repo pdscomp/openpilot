@@ -17,6 +17,9 @@ class LatControlTorqueExtOverride:
     self.enforce_torque_control_toggle = self.params.get_bool("EnforceTorqueControl")  # only during init
     self.torque_override_enabled = self.params.get_bool("TorqueParamsOverrideEnabled")
     self.frame = -1
+    # cached at the 3 s poll below; preloaded so the values are valid from frame 0
+    self._override_lat_accel_factor = float(self.params.get("TorqueParamsOverrideLatAccelFactor", return_default=True))
+    self._override_friction = float(self.params.get("TorqueParamsOverrideFriction", return_default=True))
 
     # Speed-dep state (set by LatControlTorqueExt subclass)
     self._speed_dep_active = False
@@ -29,6 +32,24 @@ class LatControlTorqueExtOverride:
   def update_override_torque_params(self, torque_params) -> bool:
     changed = False
 
+    # Manual override first: it must own the params on EVERY frame, or the per-frame
+    # speed-dep interpolation below out-writes it 299 frames out of 300. The params
+    # store is only polled at 3 s cadence; the cached values apply each frame.
+    if self.enforce_torque_control_toggle:
+      self.frame += 1
+      if self.frame % 300 == 0:
+        self.torque_override_enabled = self.params.get_bool("TorqueParamsOverrideEnabled")
+        if self.torque_override_enabled:
+          self._override_lat_accel_factor = float(self.params.get("TorqueParamsOverrideLatAccelFactor", return_default=True))
+          self._override_friction = float(self.params.get("TorqueParamsOverrideFriction", return_default=True))
+
+      if self.torque_override_enabled:
+        if torque_params.latAccelFactor != self._override_lat_accel_factor or torque_params.friction != self._override_friction:
+          torque_params.latAccelFactor = self._override_lat_accel_factor
+          torque_params.friction = self._override_friction
+          changed = True
+        return changed
+
     # Speed-dep latAccelFactor and friction: interpolate by current speed each frame.
     # Plain interp — STEER_MAX normalization is NOT used here. The carcontroller
     # handles STEER_MAX scaling of the integer command. LAF blends smoothly between
@@ -40,19 +61,5 @@ class LatControlTorqueExtOverride:
         torque_params.latAccelFactor = new_lat_accel_factor
         torque_params.friction = new_fric
         changed = True
-
-    if not self.enforce_torque_control_toggle:
-      return changed
-
-    self.frame += 1
-    if self.frame % 300 == 0:
-      self.torque_override_enabled = self.params.get_bool("TorqueParamsOverrideEnabled")
-
-      if not self.torque_override_enabled:
-        return changed
-
-      torque_params.latAccelFactor = float(self.params.get("TorqueParamsOverrideLatAccelFactor", return_default=True))
-      torque_params.friction = float(self.params.get("TorqueParamsOverrideFriction", return_default=True))
-      return True
 
     return changed

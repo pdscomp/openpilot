@@ -290,13 +290,8 @@ class BigParamOption(BigButton):
     self.set_click_callback(self._open_picker)
 
   def _read_value(self) -> int:
-    # float params store the physical value (2.5 m/s²) while the picker works in a 1..500
-    # integer domain — same x100 convention as OptionControlSP.use_float_scaling on TICI
-    val = ui_state.params.get(self._param, return_default=True)
-    try:
-      return int(float(val) * (100 if self._float_param else 1)) if val is not None else self._min_value
-    except (ValueError, TypeError):
-      return self._min_value
+    from openpilot.selfdrive.ui.sunnypilot.mici.widgets.number_picker import read_scaled_param
+    return read_scaled_param(ui_state.params, self._param, self._float_param, self._min_value)
 
   def _update_display(self):
     display_val = self._value_map[self._current] if self._value_map and self._current in self._value_map else self._current

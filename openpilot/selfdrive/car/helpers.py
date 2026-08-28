@@ -54,7 +54,9 @@ def convert_carControlSP(struct: capnp.lib.capnp._DynamicStructReader) -> struct
     return {k: v for k, v in s.items() if not k.endswith('DEPRECATED')}
 
   struct_dict = struct.to_dict()
-  struct_dataclass = structs.CarControlSP(**remove_deprecated({k: v for k, v in struct_dict.items() if not isinstance(k, dict)}))
+  # drop sub-structs (dict values): the known ones are converted explicitly below,
+  # and capnp-only ones (e.g. turnAssist) have no field on the opendbc dataclass
+  struct_dataclass = structs.CarControlSP(**remove_deprecated({k: v for k, v in struct_dict.items() if not isinstance(v, dict)}))
 
   struct_dataclass.mads = structs.ModularAssistiveDrivingSystem(**remove_deprecated(struct_dict.get('mads', {})))
   # struct_dataclass.params = [structs.CarControlSP.Param(**remove_deprecated(p)) for p in struct_dict.get('params', [])]

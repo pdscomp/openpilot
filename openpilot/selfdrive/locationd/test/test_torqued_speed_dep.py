@@ -61,6 +61,7 @@ def make_mock_CP(fingerprint=None, lat_accel_factor=1.25, friction=0.125):
   CP = MagicMock()
   CP.brand = 'test'
   CP.carFingerprint = fingerprint
+  CP.minSteerSpeed = 0.0  # steer-to-zero EPS: entries flagged requires_steer_to_zero stay valid
   CP.lateralTuning.which.return_value = 'torque'
   CP.lateralTuning.torque.friction = friction
   CP.lateralTuning.torque.latAccelFactor = lat_accel_factor

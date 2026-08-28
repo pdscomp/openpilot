@@ -311,8 +311,10 @@ class SteeringLayoutMici(NavScroller):
       self._tq_custom_btn.set_disabled()
     else:
       manual_rt = _on_off(ui_state.params.get_bool("TorqueParamsOverrideEnabled"))
-      lat_val = int(ui_state.params.get("TorqueParamsOverrideLatAccelFactor", return_default=True) or 1) / 100
-      fric_val = int(ui_state.params.get("TorqueParamsOverrideFriction", return_default=True) or 1) / 100
+      # FLOAT-typed params: get() returns the physical float (2.5 / 0.1) and already
+      # falls back to the declared default on malformed data — no x100 domain here
+      lat_val = ui_state.params.get("TorqueParamsOverrideLatAccelFactor", return_default=True)
+      fric_val = ui_state.params.get("TorqueParamsOverrideFriction", return_default=True)
       self._tq_custom_btn.set_badges([(tr("enabled"), "on"), (tr("realtime"), manual_rt), (f"{lat_val}m/s\u00b2", "on"), (str(fric_val), "on")])
 
     # The nested self-tune/custom sub-panels refresh themselves (link_sub_panel) and gate

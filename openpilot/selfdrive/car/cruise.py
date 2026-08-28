@@ -51,8 +51,12 @@ class VCruiseHelper(VCruiseHelperSP):
     _enabled = self.update_enabled_state(CS, enabled)
 
     # classify presses and step the SLA session before increments and reconciliation,
-    # in the same frame as the button events (see CruiseArbiter.step for the ordering)
-    self.update_cruise_arbiter(CS, enabled)
+    # in the same frame as the button events (see CruiseArbiter.step for the ordering).
+    # _enabled, not enabled: on non-pcmCruiseSpeed cars "enabled" is suppressed until
+    # the engaging button releases, and the arbiter's session (DISABLED guard, prompt
+    # entry) must run against the same notion the increments use — the raw flag would
+    # start the session mid-engage-hold.
+    self.update_cruise_arbiter(CS, _enabled)
 
     if CS.cruiseState.available:
       if not self.CP.pcmCruise or (not self.CP_SP.pcmCruiseSpeed and _enabled):

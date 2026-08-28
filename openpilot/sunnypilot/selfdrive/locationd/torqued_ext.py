@@ -121,9 +121,9 @@ class TorqueEstimatorExt:
 
     from openpilot.selfdrive.locationd.torqued import TorqueBuckets, STEER_BUCKET_BOUNDS, \
       POINTS_PER_BUCKET, MIN_FILTER_DECAY
-    from opendbc.sunnypilot.car.interfaces import get_speed_dep_config
+    from opendbc.sunnypilot.car.interfaces import get_speed_dep_config_for_car
 
-    cfg = get_speed_dep_config().get(self.CP.carFingerprint, {})
+    cfg = get_speed_dep_config_for_car(self.CP)
 
     if 'speed_bp' in cfg:
       self.speed_bin_centers = list(cfg['speed_bp'])

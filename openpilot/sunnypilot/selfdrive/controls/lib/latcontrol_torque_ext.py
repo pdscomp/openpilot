@@ -62,22 +62,39 @@ class LatControlTorqueExt(NeuralNetworkLateralControl, LatControlTorqueExtOverri
 
     return self._pid_log, self._output_torque
 
+  def disable_speed_dep_torque(self):
+    """The single speed-dep deactivation path. Restores the CP tune so the controller
+    doesn't keep running on the last interpolated values forever — matching what
+    upstream does when useParams is false (live params simply stop applying)."""
+    if not self._speed_dep_active:
+      return
+    self._speed_dep_active = False
+    tune = self.CP.lateralTuning.torque
+    self.lac_torque.torque_params.latAccelFactor = tune.latAccelFactor
+    self.lac_torque.torque_params.latAccelOffset = tune.latAccelOffset
+    self.lac_torque.torque_params.friction = tune.friction
+    self.lac_torque.update_limits()
+
   def update_speed_dep_torque(self, tp):
     """Apply speed-dependent learned values from torqued.
     Uses learned values for valid bins. For invalid bins, falls back to
-    TOML seed values if available for this car, otherwise global filtered."""
-    speed_bp = list(tp.speedBinCenters)
-    if not speed_bp:
-      self._speed_dep_active = False
+    TOML seed values if available for this car, otherwise global filtered.
+    A message with useParams off or no bins deactivates uniformly — both are
+    "torqued no longer stands behind these values" and must not leave the
+    controller on stale tables (useParams flips off mid-drive when the driver
+    enables the manual override)."""
+    if not tp.useParams or not tp.speedBinCenters:
+      self.disable_speed_dep_torque()
       return
+    speed_bp = list(tp.speedBinCenters)
 
     factors = list(tp.speedBinLatAccelFactors)
     frictions = list(tp.speedBinFrictions)
     valid_bp = list(tp.speedBinValid)
 
     if self._speed_dep_car_cfg is None:
-      from opendbc.sunnypilot.car.interfaces import get_speed_dep_config
-      self._speed_dep_car_cfg = get_speed_dep_config().get(self.CP.carFingerprint, {})
+      from opendbc.sunnypilot.car.interfaces import get_speed_dep_config_for_car
+      self._speed_dep_car_cfg = get_speed_dep_config_for_car(self.CP)
     cfg = self._speed_dep_car_cfg
     seed_lafs = cfg.get('laf_bp')
     seed_frictions = cfg.get('friction_bp')

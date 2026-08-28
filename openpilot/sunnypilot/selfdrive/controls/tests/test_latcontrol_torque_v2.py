@@ -255,6 +255,47 @@ class TestLatControlTorqueV2:
       step(v2, make_cs(v_ego, 0.25), 0.0)  # settled again: rate 0, integrating resumes
     assert v2.pid.i != pytest.approx(i_during[-1])
 
+  def test_unwind_freezes_integrator_left_turn(self, params):
+    """Mirror of the test above with a negative setpoint: exiting a LEFT turn the setpoint
+    rate is POSITIVE, so unwind detection must be measured relative to the side being
+    exited — a bare `rate < threshold` never fires here (the original sign bug)."""
+    v2 = make_lac(LatControlTorqueV2)
+    v_ego = 15.0
+    hold = -0.25 / v_ego ** 2
+    for _ in range(300):
+      step(v2, make_cs(v_ego, -0.25), hold)
+    assert v2.prev_setpoint == pytest.approx(-0.25)
+    v2.pid.i = -0.05
+
+    i_during = []
+    for k in range(10):
+      step(v2, make_cs(v_ego, -0.25), hold * max(0.0, 1 - 0.25 * k))
+      i_during.append(v2.pid.i)
+    assert i_during[2] != pytest.approx(-0.05)  # the pre-freeze frames did integrate
+    assert all(i == pytest.approx(i_during[3]) for i in i_during[3:])  # frozen through the unwind
+
+  def test_left_turn_entry_does_not_freeze(self, params):
+    """Entering a left turn from center the setpoint rate is negative through the
+    near-zero band — the raw-rate condition would wrongly freeze the integrator for the
+    whole turn-in. Direction-relative unwind must keep integrating."""
+    v2 = make_lac(LatControlTorqueV2)
+    v_ego = 15.0
+    target = -0.25 / v_ego ** 2
+    for _ in range(300):
+      step(v2, make_cs(v_ego, 0.0), 0.0)
+    v2.pid.i = 0.0
+
+    # ramp the plan into the left turn fast enough that the raw setpoint rate crosses
+    # the -1 m/s^3 threshold while |setpoint| is still inside the 0.3 m/s^2 band;
+    # the measurement lags at zero, so a live integrator winds negative
+    i_vals = []
+    for k in range(20):
+      step(v2, make_cs(v_ego, 0.0), target * min(1.0, 0.1 * (k + 1)))
+      i_vals.append(v2.pid.i)
+    assert any(a != pytest.approx(b) for a, b in zip(i_vals, i_vals[1:], strict=False)), \
+      "integrator must keep integrating on turn entry"
+    assert i_vals[-1] < 0.0  # winding toward the left-turn error, not held at zero
+
   def test_integrator_active_at_creep_speeds(self, params):
     """v0 freezes the integrator below 5 m/s; v2 keys the freeze/reset to
     max(minSteerSpeed, 0.3) so it keeps working at creep speeds."""

@@ -112,6 +112,10 @@ class ControlsExt(ModelStateBase):
     returning (new_desired_curvature, jerk_factor) for clip_curvature. The lateral
     maneuver mode's scripted commands must pass through the stock clip untouched."""
     if sm.valid['lateralManeuverPlan']:
+      # clear the whole assist layer: state armed before maneuver mode (a held floor, a
+      # lane-change arrest in progress) must not resume stale after it
+      self.turn_assist.reset()
+      self.lane_change_smoothing.reset()
       return new_desired_curvature, 1.0
     CS = sm['carState']
     model_v2 = sm['modelV2']
@@ -180,5 +184,6 @@ class ControlsExt(ModelStateBase):
         and sm.updated.get('lateralTorqueParameters', False)
         and sm.all_checks(['lateralTorqueParameters'])):
       tp = sm['lateralTorqueParameters']
-      if tp.useParams and hasattr(self.LaC, 'extension'):
+      if hasattr(self.LaC, 'extension'):
+        # handles activation AND deactivation: useParams off or empty bins de-assert
         self.LaC.extension.update_speed_dep_torque(tp)

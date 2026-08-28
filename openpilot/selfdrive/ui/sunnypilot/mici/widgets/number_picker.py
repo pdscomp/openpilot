@@ -1,6 +1,19 @@
 import pyray as rl
 from collections.abc import Callable
 
+
+def read_scaled_param(params, param: str, float_param: bool, min_value: int) -> int:
+  """Read a param into the picker's integer domain. Float params store the physical value
+  (2.5 m/s²) while the picker works in a 1..500 integer domain — same x100 convention as
+  OptionControlSP.use_float_scaling on TICI. round, not int(): binary floats make
+  0.29 * 100 == 28.999..., and truncation would walk the stored value down one step on
+  every open/commit cycle."""
+  val = params.get(param, return_default=True)
+  try:
+    return round(float(val) * (100 if float_param else 1)) if val is not None else min_value
+  except (ValueError, TypeError):
+    return min_value
+
 from openpilot.system.ui.lib.application import gui_app, FontWeight, MousePos
 from openpilot.system.ui.lib.scroll_panel2 import ScrollState
 from openpilot.system.ui.lib.text_measure import measure_text_cached
@@ -230,13 +243,7 @@ class NumberPickerScreen(Widget):
         break
 
   def _read_value(self) -> int:
-    # float params store the physical value (2.5 m/s²) while the picker works in a 1..500
-    # integer domain — same x100 convention as OptionControlSP.use_float_scaling on TICI
-    val = self._params.get(self._param, return_default=True)
-    try:
-      return int(float(val) * (100 if self._float_param else 1)) if val is not None else self._min_value
-    except (ValueError, TypeError):
-      return self._min_value
+    return read_scaled_param(self._params, self._param, self._float_param, self._min_value)
 
   def show_event(self):
     super().show_event()  # propagates to _scroller via _child()

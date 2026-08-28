@@ -14,6 +14,7 @@ from openpilot.common.constants import ACCELERATION_DUE_TO_GRAVITY
 from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.common.swaglog import cloudlog
 from openpilot.selfdrive.controls.lib.drive_helpers import MIN_SPEED
+from openpilot.sunnypilot.selfdrive.controls.lib.latcontrol_torque_ext_base import sign
 
 from openpilot.sunnypilot.selfdrive.controls.lib.latcontrol_torque_v0 import (
   LatControlTorque as LatControlTorqueV0,
@@ -149,9 +150,13 @@ class LatControlTorque(LatControlTorqueV0):
       self.previous_measurement = measurement
 
       # Freeze the integrator while the plan is unwinding through center: integrating the
-      # transient error there is what sticks the wheel past straight
+      # transient error there is what sticks the wheel past straight. Unwind means the
+      # setpoint magnitude is COLLAPSING toward zero, so the rate is measured relative to
+      # the side being exited (prev_setpoint's sign) — a bare `rate < threshold` only
+      # catches right-turn exits and wrongly freezes on every left-turn entry.
       setpoint_rate = (setpoint - self.prev_setpoint) / self.dt
-      unwind_detected = setpoint_rate < UNWIND_JERK_THRESHOLD and abs(setpoint) < UNWIND_LAT_ACCEL_NEAR_ZERO
+      unwind_rate = setpoint_rate * sign(self.prev_setpoint)
+      unwind_detected = unwind_rate < UNWIND_JERK_THRESHOLD and abs(setpoint) < UNWIND_LAT_ACCEL_NEAR_ZERO
       self.prev_setpoint = setpoint
 
       error = setpoint - measurement

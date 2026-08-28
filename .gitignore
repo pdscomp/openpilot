@@ -104,3 +104,7 @@ SKILL.md
 !.idea/customTargets.xml
 !.idea/tools/*
 !.run/*
+
+# screenshot test output: *.png is LFS-tracked against a push-inaccessible remote,
+# so a committed screenshot bricks installs (see CLAUDE.md)
+openpilot/selfdrive/ui/tests/screenshots/
