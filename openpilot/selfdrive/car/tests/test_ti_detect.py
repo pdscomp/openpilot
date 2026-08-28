@@ -13,6 +13,24 @@ def _pkt(*frames):
   return SimpleNamespace(can=[SimpleNamespace(address=a, src=s) for a, s in frames])
 
 
+class TestBackendBootState:
+  """manager.py:66-67 calls finalize_ti_enable + enforce_backend_state at every boot against
+  real Params. test_manager.py monkeypatches both away, so only this exercises the boot
+  contract: every key backend.py touches must exist in params_keys.h."""
+
+  def test_manager_boot_backend_path(self):
+    from openpilot.common.api.backend import enforce_backend_state, finalize_ti_enable, enable_ti, is_konik_locked
+    with OpenpilotPrefix():
+      params = Params()
+      finalize_ti_enable(params)
+      enforce_backend_state(params)
+      assert not is_konik_locked(params)
+      enable_ti(params)
+      assert params.get_bool("TorqueInterceptorEnabled")
+      assert is_konik_locked(params)
+      finalize_ti_enable(params)  # still a clean no-op with TI on
+
+
 class TestTiPresent:
   def test_seen_on_bus_one(self):
     assert ti_present([_pkt((0x100, 0), (TI_ADDR, 1))])
