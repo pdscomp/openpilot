@@ -51,11 +51,19 @@ def make_controller(fingerprint, version: int):
     params.put_bool(k, True, block=True)
   params.put_bool("LateralJerkTorqueController", False, block=True)
   params.put_bool("NeuralNetworkLateralControl", False, block=True)
+  # Replay the CX-8 as it actually drives: TI enabled (intrinsic latch), so the CP
+  # composes steerAtStandstill and the low-speed kp cap engages.
+  params.put_bool("TorqueInterceptorEnabled", True, block=True)
 
   CarInterface = interfaces[fingerprint]
   CP = CarInterface.get_non_essential_params(fingerprint)
   CP_SP = CarInterface.get_non_essential_params_sp(CP, fingerprint)
   CI = CarInterface(CP, CP_SP)
+  # Mirror card's composition: the offline getters skip opendbc's setup_interfaces, so the
+  # CX-8's intrinsic-TI latch (flags, steerAtStandstill, minSteerSpeed) never fires and the
+  # replay would build the controller on a non-TI CP.
+  from opendbc.sunnypilot.car.interfaces import setup_interfaces as opendbc_setup_interfaces
+  opendbc_setup_interfaces(CI, CP, CP_SP)
   sunnypilot_interfaces.setup_interfaces(CI, params)
   CP_SP = convert_to_capnp(CP_SP)
   VM = VehicleModel(CP)
