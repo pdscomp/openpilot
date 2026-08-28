@@ -142,20 +142,16 @@ class TestTorqueTuneTiSeed:
     assert params.get("EnforceTorqueControl") is None
     assert params.get("LiveTorqueParamsToggle") is None
 
-  def test_cx8_gets_full_bundle(self, ctx):
+  def test_cx8_gets_base_bundle_and_live_delay_left_alone(self, ctx):
     params, controls = ctx
     _with_fingerprint(controls, "MAZDA_CX8_2022")
     params.put_bool("TorqueInterceptorEnabled", True, block=True)
     select(controls)
-    _assert_seeds(params, controlsd_ext.TI_TUNE_SEEDS_CX8)
-
-  def test_cx8_explicit_delay_pick_persists(self, ctx):
-    params, controls = ctx
-    _with_fingerprint(controls, "MAZDA_CX8_2022")
-    params.put_bool("TorqueInterceptorEnabled", True, block=True)
-    params.put_bool("LagdToggle", True, block=True)
-    select(controls)
-    assert params.get_bool("LagdToggle")
+    _assert_seeds(params, controlsd_ext.TI_TUNE_SEEDS)
+    # owner-validated: "Live Delay" (lagd learner) beats a fixed manual delay, so the CX-8
+    # gets NO delay seed — stock LagdToggle=1 default applies and stays user-changeable
+    assert params.get("LagdToggle") is None
+    assert params.get("LagdToggleDelay") is None
 
   def test_cx5_gets_base_bundle_without_delay_pair(self, ctx):
     params, controls = ctx

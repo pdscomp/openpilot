@@ -34,11 +34,9 @@ TI_TUNE_SEEDS = {
   "LaneChangeSmoothingPace": 8,         # upstream default 5 (~5.8 s); 8 ≈ 4 s glide
   "LowSpeedTurnAssist": True,           # TI cars steer at standstill, so low-speed assist works
 }
-# CX-8-only: the lagd learner makes no progress on this platform (calPerc=0 across a 16-min
-# engaged route) and sits on the 0.3 s fallback; owner-validated feel is ~0.1 s total delay.
-# REMOVE if the lagd-stall root cause is fixed — seeded values become "set", so a fix must
-# also clear these two params to re-arm learning.
-TI_TUNE_SEEDS_CX8 = {**TI_TUNE_SEEDS, "LagdToggle": False, "LagdToggleDelay": 0.05}
+# No CX-8 delay override: the owner A/B'd "Live Delay" (the lagd learner) against a fixed
+# 0.05 software delay and reports it performs significantly better — stock LagdToggle=1 wins.
+TI_PLATFORMS = ("MAZDA_CX5_2022", "MAZDA_CX8_2022")
 
 
 def seed_ti_defaults(params: Params, CP) -> None:
@@ -50,13 +48,9 @@ def seed_ti_defaults(params: Params, CP) -> None:
     # enforcement off pins v0 via the resolver; the tune resolves to the declared 2.0
     # default once enforced. block=True: resolved_tune_version reads it right after, same call.
     params.put_bool("EnforceTorqueControl", True, block=True)
-  if CP.carFingerprint == "MAZDA_CX8_2022":
-    seeds = TI_TUNE_SEEDS_CX8
-  elif CP.carFingerprint == "MAZDA_CX5_2022":
-    seeds = TI_TUNE_SEEDS
-  else:
+  if CP.carFingerprint not in TI_PLATFORMS:
     return
-  for key, value in seeds.items():
+  for key, value in TI_TUNE_SEEDS.items():
     if params.get(key) is None:
       params.put(key, value, block=True)
 
