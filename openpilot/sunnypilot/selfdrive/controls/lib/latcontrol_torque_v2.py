@@ -46,6 +46,19 @@ STEER_RELEASE_I_DECAY = 0.8  # one-shot integrator decay on steering-press relea
 LOW_SPEED_X = [0, 10, 20, 30]  # m/s
 LOW_SPEED_Y = [12, 10.5, 8, 5]
 
+# TI cars pair this boost with the capped kp ladder (latcontrol_torque_v0's
+# TI_LOW_SPEED_KP_CAP): effective low-speed gain is kp + (lsf/v)^2, and with kp=4 the
+# quadratic term dominates — 0-10 kph still spent 17% of active time at full rail on the
+# owner's capped-build route (r1b), ending corrections in a railed push then a friction
+# grab (his "jerks violently, then snaps to a halt"). Halve the boost under 5 m/s for
+# Mazda TI CPs, blending back to stock by 10 m/s (36 kph) — the band he calls nailed.
+TI_LSF_SCALE_BP = [0.0, 5.0, 10.0]
+TI_LSF_SCALE_V = [0.5, 0.5, 1.0]
+
+
+def ti_lsf_scale(v_ego):
+  return float(np.interp(max(v_ego, 0.0), TI_LSF_SCALE_BP, TI_LSF_SCALE_V))
+
 # Roll compensation and latAccelOffset are lateral-accel-domain corrections; below
 # walking pace the desired lateral accel is ~0, so an unfaded road-crown term dominates
 # the whole feedforward and actively unwinds a held wheel at pull-away.
@@ -80,6 +93,7 @@ class LatControlTorque(LatControlTorqueV0):
     # window. Same length as v0's (unused here) buffer so the delay clamp stays valid.
     self.curvature_request_buffer = deque([0.] * self.lat_accel_request_buffer_len, maxlen=self.lat_accel_request_buffer_len)
     self.jerk_filter = FirstOrderFilter(0.0, 1 / (2 * np.pi * LP_FILTER_CUTOFF_HZ), self.dt)
+    self._ti_lsf_scaled = CP.steerAtStandstill and CP.brand == 'mazda'
     self.low_speed_pid_threshold = max(CP.minSteerSpeed, MIN_LATERAL_CONTROL_SPEED)
     self.prev_steering_pressed = False
     self.prev_setpoint = 0.0
@@ -164,6 +178,8 @@ class LatControlTorque(LatControlTorqueV0):
       # low-speed error boost (see the constants above); interp the schedule directly
       # rather than reading pid.k_p, which still holds the previous frame's speed here
       low_speed_factor = (np.interp(CS.vEgo, LOW_SPEED_X, LOW_SPEED_Y) / max(CS.vEgo, MIN_SPEED)) ** 2
+      if self._ti_lsf_scaled:
+        low_speed_factor *= ti_lsf_scale(CS.vEgo)
       current_kp = np.interp(CS.vEgo, self.pid._k_p[0], self.pid._k_p[1])
       error *= 1.0 + low_speed_factor / max(current_kp, 1e-3)
 
