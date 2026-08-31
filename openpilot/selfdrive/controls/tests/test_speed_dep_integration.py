@@ -372,6 +372,96 @@ class TestToggleOffFallback:
     assert tp.latAccelFactor == pytest.approx(expected_factor, abs=1e-4)
 
 
+class TestPerCountLafInterp:
+  """On a platform with a speed-dependent STEER_MAX, LAF interps in per-count space and
+  rescales by the schedule at the current speed, so the scale's step lands at the cliff
+  instead of being smeared across the cliff-spanning bin pair."""
+
+  # CX-5-shaped fixture: cliff at 14.2-14.5 m/s inside the 12.0-16.4 bin span
+  SM_SCHEDULE = ([0.0, 14.2, 14.5], [1200.0, 1200.0, 800.0])
+  SPEED_BP = [6.5, 9.5, 12.0, 16.4, 21.0, 28.0, 35.0]
+  LAF_BP = [2.43, 2.93, 2.37, 1.21, 1.16, 1.53, 1.76]
+
+  def _activate(self, ovr, schedule=None):
+    activate_speed_dep(ovr, speed_bp=list(self.SPEED_BP), lat_accel_factor_bp=list(self.LAF_BP))
+    if schedule is not None:
+      sm_bp, sm_v = schedule
+      ovr._speed_dep_steer_max_schedule = schedule
+      ovr._speed_dep_laf_per_count_bp = [laf / float(np.interp(c, sm_bp, sm_v))
+                                         for laf, c in zip(self.LAF_BP, self.SPEED_BP, strict=True)]
+
+  def _laf_at(self, ovr, v):
+    ovr._last_vego = v
+    tp = TorqueParams()
+    ovr.update_override_torque_params(tp)
+    return tp.latAccelFactor
+
+  def test_step_lands_at_the_cliff(self):
+    ovr = make_override()
+    self._activate(ovr, schedule=self.SM_SCHEDULE)
+    below, above = self._laf_at(ovr, 14.2), self._laf_at(ovr, 14.5)
+    # LAF steps down by ~the STEER_MAX ratio across 0.3 m/s (slightly more than 1.5:
+    # the smooth per-count decline adds its own slope over the same interval)
+    assert below / above == pytest.approx(1200.0 / 800.0, rel=0.03)
+
+  def test_no_smear_below_the_cliff(self):
+    ovr = make_override()
+    self._activate(ovr, schedule=self.SM_SCHEDULE)
+    # plain interp of normalized bins under-reads LAF here (over-torques ~+15%);
+    # per-count interp must sit well above it
+    smeared = float(np.interp(14.0, self.SPEED_BP, self.LAF_BP))
+    assert self._laf_at(ovr, 14.0) > smeared * 1.10
+
+  def test_round_trips_at_bin_centers(self):
+    ovr = make_override()
+    self._activate(ovr, schedule=self.SM_SCHEDULE)
+    for c, laf in zip(self.SPEED_BP, self.LAF_BP, strict=True):
+      assert self._laf_at(ovr, c) == pytest.approx(laf, abs=1e-9)
+
+  def test_flat_platform_unchanged(self):
+    ovr = make_override()
+    self._activate(ovr, schedule=None)
+    for v in [10.0, 13.4, 14.35, 15.0, 25.0]:
+      assert self._laf_at(ovr, v) == pytest.approx(float(np.interp(v, self.SPEED_BP, self.LAF_BP)), abs=1e-9)
+
+  def test_friction_stays_plain_interp(self):
+    ovr = make_override()
+    self._activate(ovr, schedule=self.SM_SCHEDULE)
+    ovr._speed_dep_friction_bp = list(SAMPLE_FRICTION_BP[:len(self.SPEED_BP)])
+    ovr._last_vego = 14.35
+    tp = TorqueParams()
+    ovr.update_override_torque_params(tp)
+    assert tp.friction == pytest.approx(float(np.interp(14.35, self.SPEED_BP, ovr._speed_dep_friction_bp)), abs=1e-9)
+
+  @patch(PATCH_GET_SPEED_DEP_CONFIG)
+  def test_update_speed_dep_torque_builds_per_count_table(self, mock_get_config):
+    """The per-count table is built from the config's schedule for learned and seed bins alike."""
+    mock_get_config.return_value = {
+      'TEST_CAR': {'speed_bp': self.SPEED_BP, 'laf_bp': self.LAF_BP,
+                   'friction_bp': [0.1] * 7, 'steer_max_schedule': self.SM_SCHEDULE}
+    }
+    mock_self = TestUpdateSpeedDepTorqueFallback._make_mock_self()
+    mock_tp = TestUpdateSpeedDepTorqueFallback._make_mock_tp(self.SPEED_BP, self.LAF_BP, [0.1] * 7, [True] * 7)
+    LatControlTorqueExt.update_speed_dep_torque(mock_self, mock_tp)
+
+    assert mock_self._speed_dep_steer_max_schedule == self.SM_SCHEDULE
+    sm_bp, sm_v = self.SM_SCHEDULE
+    expected = [laf / float(np.interp(c, sm_bp, sm_v)) for laf, c in zip(self.LAF_BP, self.SPEED_BP, strict=True)]
+    assert mock_self._speed_dep_laf_per_count_bp == pytest.approx(expected)
+
+  @patch(PATCH_GET_SPEED_DEP_CONFIG)
+  def test_update_speed_dep_torque_no_schedule_leaves_table_empty(self, mock_get_config):
+    mock_get_config.return_value = {
+      'TEST_CAR': {'speed_bp': self.SPEED_BP, 'laf_bp': self.LAF_BP, 'friction_bp': [0.1] * 7}
+    }
+    mock_self = TestUpdateSpeedDepTorqueFallback._make_mock_self()
+    mock_tp = TestUpdateSpeedDepTorqueFallback._make_mock_tp(self.SPEED_BP, self.LAF_BP, [0.1] * 7, [True] * 7)
+    LatControlTorqueExt.update_speed_dep_torque(mock_self, mock_tp)
+
+    assert mock_self._speed_dep_steer_max_schedule is None
+    assert mock_self._speed_dep_laf_per_count_bp == []
+
+
 class TestUpdateSpeedDepTorqueFallback:
   """Tests for update_speed_dep_torque fallback logic (TOML seeds vs global filtered)."""
 

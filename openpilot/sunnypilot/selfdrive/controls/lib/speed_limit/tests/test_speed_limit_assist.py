@@ -248,7 +248,13 @@ class TestSpeedLimitAssist:
 
     self.sla.update(True, False, current_speed, 0, self.pcm_long_max_set_speed, target_speed, target_speed, True, distance, self.events_sp)
     assert self.sla.state == SpeedLimitAssistState.adapting
-    assert self.sla.output_v_target == target_speed  # TODO-SP: assert expected accel, need to enable self.acceleration_solutions
+    assert self.sla.output_v_target == target_speed
+    # required decel to the sign: (limit^2 - v_ego^2) / (2 * d), reached through the
+    # publication ramp
+    expected = (target_speed ** 2 - current_speed ** 2) / (2. * distance)
+    for _ in range(40):
+      self.sla.update(True, False, current_speed, 0, self.pcm_long_max_set_speed, target_speed, target_speed, True, distance, self.events_sp)
+    assert self.sla.output_a_target == pytest.approx(max(expected, -2.0), abs=1e-3)
 
   def test_long_disengaged_to_disabled(self):
     self.initialize_active_state(self.pcm_long_max_set_speed)
@@ -524,7 +530,7 @@ class TestAssistMirrorDefaultMessage:
     from openpilot.sunnypilot.selfdrive.selfdrived.events import EventsSP
     session = custom.CarStateSP.new_message().cruiseSession
     mirror = self._mirror()
-    mirror.update(session, a_ego=0.0, events_sp=EventsSP())
+    mirror.update(session, v_ego=25.0, distance=0.0, a_ego=0.0, events_sp=EventsSP())
     assert mirror.output_v_target == V_CRUISE_UNSET
 
   def test_real_cap_passes_through(self):
@@ -532,5 +538,25 @@ class TestAssistMirrorDefaultMessage:
     session = custom.CarStateSP.new_message().cruiseSession
     session.vCap = 22.5
     mirror = self._mirror()
-    mirror.update(session, a_ego=0.0, events_sp=EventsSP())
+    mirror.update(session, v_ego=20.0, distance=0.0, a_ego=0.0, events_sp=EventsSP())
     assert mirror.output_v_target == pytest.approx(22.5)
+
+  def test_active_cap_below_v_ego_publishes_required_decel(self):
+    from openpilot.sunnypilot.selfdrive.selfdrived.events import EventsSP
+    session = custom.CarStateSP.new_message().cruiseSession
+    session.state = SpeedLimitAssistState.adapting
+    session.vCap = 20.0
+    mirror = self._mirror()
+    # 25 -> 20 m/s over 150 m needs (400 - 625) / 300 = -0.75; the publication ramp
+    # walks there at 2 m/s3, so run it to convergence
+    for _ in range(20):
+      mirror.update(session, v_ego=25.0, distance=150.0, a_ego=0.0, events_sp=EventsSP())
+    assert mirror.output_a_target == pytest.approx(-0.75)
+
+  def test_inactive_session_tracks_a_ego(self):
+    from openpilot.sunnypilot.selfdrive.selfdrived.events import EventsSP
+    session = custom.CarStateSP.new_message().cruiseSession
+    session.vCap = 20.0  # cap present but session not active
+    mirror = self._mirror()
+    mirror.update(session, v_ego=25.0, distance=150.0, a_ego=-0.2, events_sp=EventsSP())
+    assert mirror.output_a_target == pytest.approx(-0.2)

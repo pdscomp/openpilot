@@ -45,13 +45,17 @@ VERSION = 0
 
 
 class LatControlTorque(LatControl):
+  # subclasses may override with a speed schedule; the PID must be built with it here,
+  # because the extension captures the constructed object and drives it directly
+  KD_SCHEDULE = KD
+
   def __init__(self, CP, CP_SP, CI, dt):
     super().__init__(CP, CP_SP, CI, dt)
     self.torque_params = CP.lateralTuning.torque.as_builder()
     self.torque_from_lateral_accel = CI.torque_from_lateral_accel()
     self.lateral_accel_from_torque = CI.lateral_accel_from_torque()
     kp_table = [min(k, TI_LOW_SPEED_KP_CAP) for k in KP_INTERP] if CP.steerAtStandstill and CP.brand == 'mazda' else KP_INTERP
-    self.pid = PIDController([INTERP_SPEEDS, kp_table], KI, KD, rate=1/self.dt)
+    self.pid = PIDController([INTERP_SPEEDS, kp_table], KI, self.KD_SCHEDULE, rate=1/self.dt)
     self.update_limits()
     self.steering_angle_deadzone_deg = self.torque_params.steeringAngleDeadzoneDeg
     self.lat_accel_request_buffer_len = int(LAT_ACCEL_REQUEST_BUFFER_SECONDS / self.dt)
@@ -130,10 +134,21 @@ class LatControlTorque(LatControl):
         output_torque = self.torque_from_lateral_accel(output_lataccel, self.torque_params)
 
       # Lateral acceleration torque controller extension updates
-      # Overrides pid_log.error and output_torque
-      pid_log, output_torque = self.extension.update(CS, VM, self.pid, params, ff, pid_log, setpoint, measurement, calibrated_pose, roll_compensation,
-                                                     future_desired_lateral_accel, measurement, lateral_accel_deadzone, gravity_adjusted_future_lateral_accel,
-                                                     desired_curvature, measured_curvature, steer_limited_by_safety, output_torque)
+      # Overrides pid_log.error and output_torque. Keyword-bound: the signature is long and
+      # shared across controllers, and a positional call fails silently if a sync reorders it.
+      pid_log, output_torque = self.extension.update(CS, VM, self.pid, params, ff, pid_log,
+                                                     setpoint=setpoint,
+                                                     measurement=measurement,
+                                                     calibrated_pose=calibrated_pose,
+                                                     roll_compensation=roll_compensation,
+                                                     desired_lateral_accel=future_desired_lateral_accel,
+                                                     actual_lateral_accel=measurement,
+                                                     lateral_accel_deadzone=lateral_accel_deadzone,
+                                                     gravity_adjusted_lateral_accel=gravity_adjusted_future_lateral_accel,
+                                                     desired_curvature=desired_curvature,
+                                                     actual_curvature=measured_curvature,
+                                                     steer_limited_by_safety=steer_limited_by_safety,
+                                                     output_torque=output_torque)
 
       pid_log.active = True
       pid_log.p = float(self.pid.p)

@@ -19,8 +19,10 @@ The session is published on carStateSP.cruiseSession; announceCounter makes 100 
 alert-worthy transitions visible to 20 Hz consumers without sampling loss.
 
 A pending confirm prompt freezes speed at three altitudes, each with a distinct job:
-  1. the session cap (v_cap) holds the old target, so the plan min() cannot release
-     the dash toward the baseline while the driver is deciding;
+  1. out of an active session, the session cap (v_cap) holds the old target, so the
+     plan min() cannot release the dash toward the baseline while the driver is
+     deciding. Prompting from idle publishes no cap: there is no old target to hold,
+     and a cap equal to the baseline would still relabel the plan source as a limiter;
   2. the ICBM servo parks (controller.prompt_frozen) with its restore patience held
      at zero, so a decline/timeout still waits out a full quiet window;
   3. card vetoes button emission with same-frame state (gate_send_button), because
@@ -169,10 +171,18 @@ class CruiseArbiter:
 
   def _enter_prompt(self):
     # Freeze the plan for the length of the prompt: out of an active session the hold is
-    # the session's last cap (the dash stays put instead of restoring un-confirmed);
-    # idle it is the cluster, which loses no min() against cruise and changes nothing.
+    # the session's last cap (the dash stays put instead of restoring un-confirmed).
+    # Idle there is nothing to hold -- the baseline IS the dash -- so publish no cap at
+    # all. Holding the cluster instead is a no-op numerically but NOT in the plan's
+    # min(): the display-unit round-trip (round to whole mph/kph, divide back) lands a
+    # few mm/s under v_cruise, so SLA wins the min() by rounding error alone and relabels
+    # longitudinalPlanSource as a limiter. That relabel arms ICBM's decel overshoot
+    # against an ordinary cruise convergence, and the servo's own prompt freeze then
+    # stores the resulting command until the prompt times out and dumps it as a SET-
+    # burst. Pre-2026-07-26 this compared exactly equal and cruise won the tie; keep the
+    # property explicit instead of resting it on float luck.
     was_session = self.state in ACTIVE_STATES or self.v_cap < V_CRUISE_UNSET
-    hold = self.v_cap if was_session else self._cluster_conv / self._conv
+    hold = self.v_cap if was_session else V_CRUISE_UNSET
     self._set_state(SessionState.preActive)
     self.v_cap = float(hold)
     self.pre_active_timer = int(PRE_ACTIVE_GUARD_PERIOD / DT_CTRL)

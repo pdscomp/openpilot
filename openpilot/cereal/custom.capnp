@@ -42,8 +42,9 @@ struct IntelligentCruiseButtonManagement {
     none @0;
     increase @1;
     decrease @2;
-    # sustained hold at the button message's native rate, for ECUs whose long-press
-    # steps the set speed along a coarse grid (e.g. Mazda +5 mph)
+    # sustained button stream at the message's native rate: the fast walk for large
+    # moves (interleaved with the wheel's own frames it registers as paced presses,
+    # never as a held button)
     increaseHold @3;
     decreaseHold @4;
   }
@@ -232,6 +233,9 @@ struct LongitudinalPlanSP @0xf35cc4560bbf6ec2 {
       maxPredictedLateralAccel @4 :Float32;
       enabled @5 :Bool;
       active @6 :Bool;
+      # lowest planned speed on the model horizon, m/s; 0 = no lookahead (feature off,
+      # long disabled, or no model), 255 caps "nothing binding ahead"
+      vAheadMin @7 :Float32;
     }
 
     struct Map {
@@ -358,6 +362,7 @@ struct OnroadEventSP @0xda96579883444c35 {
     e2eChime @23;
     laneChangeRoadEdge @24;
     torqueInterceptorNotReady @25;
+    bigModelReady @26;
   }
 }
 

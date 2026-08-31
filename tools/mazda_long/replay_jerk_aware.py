@@ -44,7 +44,9 @@ def load_frames(seg_paths, keep_model=True):
   """Extract per-controlsState-frame inputs from rlogs (100 Hz), forward-filling slower
   services. keep_model=False drops the modelV2 reference from each frame — a run with the
   extension override controllers off never reads it, and retaining the readers pins every
-  segment's rlog buffer in memory for the whole run."""
+  segment's rlog buffer in memory for the whole run. keep_model='plan' copies just the
+  fields the v2 setpoint jerk source reads into a small namespace per model message, so
+  the trajectory replays without pinning the rlog buffers."""
   from openpilot.tools.lib.logreader import LogReader
   frames = []
   cs_last = None
@@ -63,6 +65,14 @@ def load_frames(seg_paths, keep_model=True):
         lp_last = getattr(m, w)
       elif w == 'modelV2':
         model_last = m.modelV2
+        if keep_model == 'plan':
+          model_last = SimpleNamespace(
+            frameId=model_last.frameId,
+            orientation=SimpleNamespace(x=[0.0] * 33),  # only length-checked (ext-base model_valid)
+            orientationRate=SimpleNamespace(z=np.array(model_last.orientationRate.z)),
+            velocity=SimpleNamespace(x=np.array(model_last.velocity.x)),
+            acceleration=SimpleNamespace(y=np.array(model_last.acceleration.y)),  # v0's ext lookahead reads it
+          )
       elif w == 'lateralTorqueParameters':
         ltp_last = m.lateralTorqueParameters
       elif w == 'controlsState':

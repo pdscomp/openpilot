@@ -182,7 +182,13 @@ class ModularAssistiveDrivingSystem:
 
     if not CS.cruiseState.available and not self.no_main_cruise:
       self.events.remove(EventName.buttonEnable)
-      if self.selfdrive.CS_prev.cruiseState.available:
+      # On these cars the ACC main state is the only MADS off-switch, so lateral must never
+      # outlive it. Watching the falling edge alone leaves a trap: anything that engages MADS
+      # while availability is already low (a car reporting cruise enabled without main on)
+      # never sees an edge and cannot be shut off short of ignition off. Checking the level
+      # too catches that state on the next frame. Brands that engage MADS on their own button
+      # with main cruise off keep the edge-only behavior.
+      if self.selfdrive.CS_prev.cruiseState.available or (self.enabled and not self.allow_always):
         self.events_sp.add(EventNameSP.lkasDisable)
 
     if self.steering_mode_on_brake == MadsSteeringModeOnBrake.DISENGAGE:

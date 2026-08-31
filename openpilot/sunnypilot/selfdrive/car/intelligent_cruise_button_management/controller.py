@@ -16,12 +16,21 @@ from openpilot.common.swaglog import cloudlog
 from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.helpers import get_minimum_set_speed
 from openpilot.sunnypilot.selfdrive.car.cruise_ext import CRUISE_BUTTON_TIMER, update_manual_button_timers
 
+ButtonType = car.CarState.ButtonEvent.Type
 LongitudinalPlanSource = custom.LongitudinalPlanSP.LongitudinalPlanSource
 State = custom.IntelligentCruiseButtonManagement.IntelligentCruiseButtonManagementState
 SendButtonState = custom.IntelligentCruiseButtonManagement.SendButtonState
 SessionState = custom.LongitudinalPlanSP.SpeedLimit.AssistState
 
 INACTIVE_TIMER = 0.4
+# After a genuine driver press the servo yields in the opposing direction for this long:
+# the driver just chose a speed and an immediate synthesized walk-back reads as a fight
+# (route 126 t=341: a +5 was reverted within 1.4 s). SET+ parks down-moves, SET- parks
+# up-moves (a refused re-anchor otherwise restores the baseline right over a fresh -5);
+# a press in the opposing direction cancels the other grace. Accountability mirrors the
+# gas override: the press is the driver's, so no urgency carve-out.
+DRIVER_PRESS_GRACE_T = 3.0
+DRIVER_PRESS_GRACE_FRAMES = int(DRIVER_PRESS_GRACE_T / DT_CTRL)
 # Reaction deadband in display units, applied only while a limiter (SCC/SLA) drives the
 # plan; those targets jitter 1-2 units frame to frame and an undamped servo ping-pongs
 # SET+/SET- around the noise. A cruise-source target is the driver setpoint, a stable
@@ -37,7 +46,10 @@ REACT_TIMER = 0.3
 # while the set speed is moving. The quiet window also gives card time to adopt the dash
 # after a driver press before the servo could chase a stale target. Decel-overshoot
 # release is exempt; its slow monotonic rise is measured as tolerated.
-RESTORE_QUIET_TIME = 3.0
+# Sized from an 11-route / 57k-frame sweep of the recorded target streams: the churn
+# suppression is all bought in the first second (regret 67.7% -> 27.0% at 1.0 s; 3.0 s
+# only reaches 26.2% while nearly doubling the speed lost to the wait).
+RESTORE_QUIET_TIME = 1.0
 RESTORE_QUIET_FRAMES = int(RESTORE_QUIET_TIME / DT_CTRL)
 
 # Deceleration overshoot: a stock ACC's deceleration scales with the gap between the dash
@@ -54,7 +66,14 @@ DECEL_OVERSHOOT_PARAMS = {
   # ~0.09 m/s^2 per mph of gap, dead below ~2 mph, saturating near -0.75 m/s^2 by ~9 mph
   'mazda': {
     'decel_bp': [0.02, 0.09, 0.26, 0.44, 0.73],  # desired decel magnitude, m/s^2
-    'gap_v': [1.5, 2.5, 4.0, 6.0, 8.5],  # required gap below vEgo, mph
+    # Required gap below vEgo, mph, carrying a lead over the steady-state inverse. The gap
+    # the ECU actually sees is not the one commanded here: the lever's rise is limited by
+    # the dash walk (~4 mph/s measured), not by DECEL_OVERSHOOT_RISE, so a maneuver spends
+    # its first seconds at a gap well short of the request -- route 135 measured 2.65 s
+    # median from a limiter taking the source to the car pulling -0.5 m/s^2. Commanding the
+    # deeper gap up front pays that walk back; the request falls as the car converges, so
+    # the lever still lets go on its own.
+    'gap_v': [2.0, 4.0, 6.0, 8.5, 10.0],
     'max_gap': 10.,  # mph; the response saturates, going deeper buys nothing
     'min_decel': 0.15,  # m/s^2; leave gentle coast-downs to the stock behavior
   },
@@ -66,10 +85,16 @@ DECEL_OVERSHOOT_RELEASE = 3.  # mph/s
 DECEL_OVERSHOOT_SOURCES = (LongitudinalPlanSource.sccVision, LongitudinalPlanSource.sccMap,
                            LongitudinalPlanSource.speedLimitAssist)
 
-# Abandon a hold (and disable long-press for the drive) if the dash never moved this long
-# past the profile's expected step time. Synthesized holds interleave with the wheel's
-# genuine button-up frames, so an ECU may refuse them; taps are the proven fallback.
-HOLD_FIRST_STEP_MARGIN = 0.5  # s
+# The sustained 10 Hz stream registers on the ECU as paced discrete presses, never as a
+# held button (all-routes census: 149/149 stream-driven dash steps were 1 mph -- the
+# wheel's own button-up frames interleave with the forged ones, so the ECU never sees an
+# unbroken hold). At ~4 mph/s it is still the fastest walk available, so it takes any
+# move with a real distance to cover; discrete taps take the small remainder, where the
+# stream's in-flight frames would overshoot and ping-pong around the target.
+FAST_MODE_MIN = 3  # display units of remaining error to run the stream
+# If the dash never moves under the stream, this ECU is not registering it at all;
+# taps are the proven fallback for the rest of the drive.
+FAST_STALL_T = 1.5  # s
 
 TAP_BUTTONS = {
   State.increasing: SendButtonState.increase,
@@ -95,7 +120,13 @@ class IntelligentCruiseButtonManagement:
     self.pre_active_timer = 0
     self.restore_quiet_timer = 0
     self.v_target_prev = 0
+    self.v_target_raw = 0
+    self.v_target_raw_prev = 0
     self.react_deadband = REACT_DEADBAND
+    self.lookahead_valid = False
+    self.dip_ahead = False
+    self.down_grace_timer = 0
+    self.up_grace_timer = 0
 
     self.is_ready = False
     self.is_ready_prev = False
@@ -109,12 +140,11 @@ class IntelligentCruiseButtonManagement:
     self.overshoot_params = DECEL_OVERSHOOT_PARAMS.get(CP.brand)
     self.limiter_active = False
 
-    # Long-press (hold) execution
-    self.hold_active = False
-    self.hold_frames = 0
-    self.hold_start_cluster = 0
-    self.hold_step_landed = False
-    self.longpress_faulted = False  # set for the drive when a synthesized hold doesn't land
+    # Fast-walk stream execution
+    self.fast_active = False
+    self.fast_stall_frames = 0
+    self.fast_last_cluster = 0
+    self.fast_faulted = False  # set for the drive when the stream never moves the dash
 
     self.cruise_button_timers = dict(CRUISE_BUTTON_TIMER)
 
@@ -124,7 +154,13 @@ class IntelligentCruiseButtonManagement:
 
     p = self.overshoot_params
     want = 0.0
-    if (self.decel_overshoot_enabled and self.is_ready
+    # Never integrate a command the servo cannot emit: is_ready covers a driver press,
+    # prompt_frozen a pending confirm. Both block emission, so winding up behind them
+    # only banks a stale gap to dump the moment the block lifts. Nothing is lost by
+    # waiting -- a limiter still asking for decel rebuilds at DECEL_OVERSHOOT_RISE, ~0.5 s
+    # to a full gap, well inside the REACT_TIMER the servo owes before it acts anyway.
+    if (self.decel_overshoot_enabled and self.is_ready and not self.prompt_frozen
+        and self.down_grace_timer <= 0
         and LP_SP.longitudinalPlanSource in DECEL_OVERSHOOT_SOURCES
         and LP_SP.aTarget < -p['min_decel'] and CS.vEgo > LP_SP.vTarget):
       want = min(float(np.interp(-LP_SP.aTarget, p['decel_bp'], p['gap_v'])), p['max_gap'])
@@ -132,7 +168,11 @@ class IntelligentCruiseButtonManagement:
     if want > self.overshoot_mph:
       self.overshoot_mph = min(want, self.overshoot_mph + DECEL_OVERSHOOT_RISE * DT_CTRL)
     else:
-      self.overshoot_mph = max(want, self.overshoot_mph - DECEL_OVERSHOOT_RELEASE * DT_CTRL)
+      # release gently only while the limiter is live (aTarget flaps between the ECU's
+      # decel stages mid-maneuver); once the plan is back on cruise the residual only
+      # holds the dash down and stalls the restore, so drop it at the build rate
+      release = DECEL_OVERSHOOT_RELEASE if self.limiter_active else DECEL_OVERSHOOT_RISE
+      self.overshoot_mph = max(want, self.overshoot_mph - release * DT_CTRL)
 
     return self.overshoot_mph
 
@@ -150,6 +190,10 @@ class IntelligentCruiseButtonManagement:
 
     self.v_target_prev = self.v_target
     self.v_target = round(v_target_ms * speed_conv)
+    # The plan's own target, before the overshoot lever: restore intent is judged against
+    # this. The lever's decay is self-inflicted motion and must not look like a moving plan.
+    self.v_target_raw_prev = self.v_target_raw
+    self.v_target_raw = round(LP_SP.vTarget * speed_conv)
     self.v_cruise_min = get_minimum_set_speed(self.is_metric)
     self.v_cruise_cluster = round(CS.cruiseState.speedCluster * speed_conv)
 
@@ -157,49 +201,51 @@ class IntelligentCruiseButtonManagement:
     # Overshoot keeps the limiter band: its command moves by design.
     self.react_deadband = REACT_DEADBAND if self.limiter_active or self.overshoot_mph > 0 else 1
 
+    # Vision lookahead for the restore gate. 0 = no lookahead (feature off, long disabled,
+    # or no model) and the servo falls back to the stillness heuristic below.
+    v_ahead_min = LP_SP.smartCruiseControl.vision.vAheadMin
+    self.lookahead_valid = v_ahead_min > 0.
+    self.dip_ahead = self.lookahead_valid and v_ahead_min * speed_conv < self.v_target_raw - self.react_deadband
+
   def update_restore_quiet_timer(self) -> None:
-    # how long an up-error has persisted against a still target; any target motion, the
-    # error closing, or a pending confirm prompt resets it. Holding the timer at zero
+    # how long an up-error has persisted against a still PLAN target; plan-target motion,
+    # the error closing, or a pending confirm prompt resets it. Holding the timer at zero
     # through the prompt means a decline or timeout still waits out a FULL quiet window
     # before any restore: the prompt must not pre-pay the servo's patience.
-    up_error = self.v_target - self.v_cruise_cluster
+    # Keyed on v_target_raw, not the overshoot-adjusted command: the lever's slow release
+    # after a limiter ends moved v_target every few frames and pinned this timer at zero
+    # until the decay finished (route 126: 4.1 s of extra post-curve braking).
+    up_error = self.v_target_raw - self.v_cruise_cluster
     if self.prompt_frozen:
       self.restore_quiet_timer = 0
-    elif up_error >= self.react_deadband and self.v_target == self.v_target_prev:
+    elif up_error >= self.react_deadband and self.v_target_raw == self.v_target_raw_prev:
       self.restore_quiet_timer += 1
     else:
       self.restore_quiet_timer = 0
 
-  def plan_hold(self) -> None:
-    # Start a hold when the remaining error spans at least one ECU snap step; run taps for
-    # the remainder. Release is evaluated every frame against the live dash, so a snap that
-    # lands mid-grid (the ECU aligns first) just shrinks the remainder.
+  def plan_fast_mode(self) -> None:
+    # Run the stream while the remaining error is worth it; taps take the remainder.
+    # Evaluated every frame against the live dash. No grid or metric assumptions: the
+    # stream is just presses, so it is valid wherever taps are.
     remaining = abs(self.v_target - self.v_cruise_cluster)
-    use_hold = (self.profile.supports_longpress(self.is_metric) and not self.longpress_faulted
-                and remaining >= self.profile.longpress_step)
+    use_fast = not self.fast_faulted and remaining >= FAST_MODE_MIN
 
-    if use_hold and not self.hold_active:
-      self.hold_active = True
-      self.hold_frames = 0
-      self.hold_start_cluster = self.v_cruise_cluster
-      self.hold_step_landed = False
-    elif self.hold_active:
-      self.hold_frames += 1
-      if remaining < self.profile.longpress_step:
-        self.hold_active = False
-      elif self.v_cruise_cluster == self.hold_start_cluster:
-        # the ECU should have stepped by now; if the dash never moved, this ECU does not
-        # integrate synthesized holds; fall back to taps for the rest of the drive
-        due = self.profile.longpress_step_period_s if self.hold_step_landed else self.profile.longpress_first_step_s
-        if self.hold_frames * DT_CTRL > due + HOLD_FIRST_STEP_MARGIN:
-          self.longpress_faulted = True
-          self.hold_active = False
-          cloudlog.event("icbm_longpress_fallback", brand=self.CP.brand)
+    if use_fast and not self.fast_active:
+      self.fast_active = True
+      self.fast_stall_frames = 0
+      self.fast_last_cluster = self.v_cruise_cluster
+    elif self.fast_active:
+      if remaining < FAST_MODE_MIN:
+        self.fast_active = False
+      elif self.v_cruise_cluster != self.fast_last_cluster:
+        self.fast_last_cluster = self.v_cruise_cluster
+        self.fast_stall_frames = 0
       else:
-        # a step landed; re-arm the watchdog from the new dash value
-        self.hold_start_cluster = self.v_cruise_cluster
-        self.hold_frames = 0
-        self.hold_step_landed = True
+        self.fast_stall_frames += 1
+        if self.fast_stall_frames * DT_CTRL > FAST_STALL_T:
+          self.fast_faulted = True
+          self.fast_active = False
+          cloudlog.event("icbm_fast_mode_fallback", brand=self.CP.brand)
 
   def update_state_machine(self) -> custom.IntelligentCruiseButtonManagement.SendButtonState:
     self.pre_active_timer = max(0, self.pre_active_timer - 1)
@@ -222,9 +268,28 @@ class IntelligentCruiseButtonManagement:
         # The overshoot exemption only covers the overshoot command's own slow release
         # (still limiter-sourced); residual overshoot after a source flip back to cruise
         # must not bypass the quiet window into a full baseline restore.
-        up_allowed = ((self.overshoot_mph > 0 and self.limiter_active)
-                      or not self.profile.decel_needs_stable_setpoint
-                      or self.restore_quiet_timer >= RESTORE_QUIET_FRAMES)
+        # With a valid vision lookahead the profile replaces the stillness heuristic
+        # outright: restore immediately when nothing ahead binds below the target, and
+        # hold while a dip is coming, however quiet the target is -- restoring between
+        # bends accelerates the car into the next apex (route 126: 3 of 8 over-ceiling
+        # apexes were restore-fed).
+        if self.lookahead_valid:
+          up_allowed = not self.dip_ahead
+        else:
+          up_allowed = ((self.overshoot_mph > 0 and self.limiter_active)
+                        or not self.profile.decel_needs_stable_setpoint
+                        or self.restore_quiet_timer >= RESTORE_QUIET_FRAMES)
+        up_allowed = up_allowed and self.up_grace_timer <= 0
+
+        # Down-moves skip the quiet window because a limiter's decel is urgent; that is
+        # only true while the limiter is live. The overshoot is a lever, not a
+        # destination, so a residual gap left over after a source flip back to cruise
+        # must not start a fresh descent (mirror of up_allowed's residual carve-out).
+        # Without overshoot in play a down-move is a plain setpoint correction (a dash
+        # residual from a dropped press) and stays unconditional. A fresh driver SET+
+        # press parks all down-moves for the grace window: the dash is the driver's for
+        # a beat, and the plan keeps publishing its cap regardless.
+        down_allowed = (self.limiter_active or self.overshoot_mph <= 0) and self.down_grace_timer <= 0
 
         # PRE_ACTIVE
         if self.state == State.preActive:
@@ -232,7 +297,8 @@ class IntelligentCruiseButtonManagement:
             if self.v_target - self.v_cruise_cluster >= self.react_deadband and up_allowed:
               self.state = State.increasing
 
-            elif self.v_cruise_cluster - self.v_target >= self.react_deadband and self.v_cruise_cluster > self.v_cruise_min:
+            elif self.v_cruise_cluster - self.v_target >= self.react_deadband \
+                 and self.v_cruise_cluster > self.v_cruise_min and down_allowed:
               self.state = State.decreasing
 
             else:
@@ -240,7 +306,7 @@ class IntelligentCruiseButtonManagement:
 
         # HOLDING
         elif self.state == State.holding and not self.prompt_frozen:
-          down_pending = self.v_cruise_cluster - self.v_target >= self.react_deadband
+          down_pending = self.v_cruise_cluster - self.v_target >= self.react_deadband and down_allowed
           up_pending = self.v_target - self.v_cruise_cluster >= self.react_deadband
           if down_pending or (up_pending and up_allowed):
             self.pre_active_timer = int(REACT_TIMER / DT_CTRL)
@@ -248,7 +314,9 @@ class IntelligentCruiseButtonManagement:
 
         # ACCELERATING
         elif self.state == State.increasing:
-          if self.v_target <= self.v_cruise_cluster:
+          # a dip appearing mid-restore aborts it: the commit gate trails the profile,
+          # and stepping up until the limiter takes the source feeds the next apex
+          if self.v_target <= self.v_cruise_cluster or self.dip_ahead:
             self.state = State.holding
 
         # DECELERATING
@@ -263,10 +331,10 @@ class IntelligentCruiseButtonManagement:
         self.state = State.preActive
 
     if self.state in TAP_BUTTONS:
-      self.plan_hold()
-      send_button = HOLD_BUTTONS[self.state] if self.hold_active else TAP_BUTTONS[self.state]
+      self.plan_fast_mode()
+      send_button = HOLD_BUTTONS[self.state] if self.fast_active else TAP_BUTTONS[self.state]
     else:
-      self.hold_active = False
+      self.fast_active = False
       send_button = SendButtonState.none
 
     return send_button
@@ -276,6 +344,18 @@ class IntelligentCruiseButtonManagement:
 
     ready = CC.enabled and not CC.cruiseControl.override and not CC.cruiseControl.cancel and not CC.cruiseControl.resume
     button_pressed = any(self.cruise_button_timers[k] > 0 for k in self.cruise_button_timers)
+
+    # buttonEvents carry only the wheel's own presses (forged frames echo on src 128+ and
+    # never reach carState), so this cannot latch on the servo's own sends
+    if self.cruise_button_timers[ButtonType.accelCruise] > 0:
+      self.down_grace_timer = DRIVER_PRESS_GRACE_FRAMES
+      self.up_grace_timer = 0
+    elif self.cruise_button_timers[ButtonType.decelCruise] > 0:
+      self.up_grace_timer = DRIVER_PRESS_GRACE_FRAMES
+      self.down_grace_timer = 0
+    else:
+      self.down_grace_timer = max(0, self.down_grace_timer - 1)
+      self.up_grace_timer = max(0, self.up_grace_timer - 1)
 
     self.is_ready = ready and not button_pressed
 

@@ -26,6 +26,11 @@ class LatControlTorqueExtOverride:
     self._speed_dep_speed_bp = []
     self._speed_dep_lat_accel_factor_bp = []
     self._speed_dep_friction_bp = []
+    # Per-count LAF interp (platforms with a speed-dependent STEER_MAX): the schedule is
+    # (speed_bp, steer_max_v) from the car's speed-dep config, and the per-count table is
+    # the LAF table divided by the schedule at each bin center. None/empty on flat cars.
+    self._speed_dep_steer_max_schedule = None
+    self._speed_dep_laf_per_count_bp = []
     self._speed_dep_car_cfg = None
     self._last_vego = 0.0
 
@@ -51,11 +56,21 @@ class LatControlTorqueExtOverride:
         return changed
 
     # Speed-dep latAccelFactor and friction: interpolate by current speed each frame.
-    # Plain interp — STEER_MAX normalization is NOT used here. The carcontroller
-    # handles STEER_MAX scaling of the integer command. LAF blends smoothly between
-    # bins, giving the PID gradual headroom transition across the STEER_MAX cliff.
+    # On a platform with a speed-dependent STEER_MAX, bin LAF values are normalized units
+    # learned under one scale each, so they interp in per-count space and rescale by the
+    # schedule at the current speed: the physical counts curve is smooth, and the scale's
+    # step lands exactly where the carcontroller applies it (14.2-14.5 m/s on the CX-5)
+    # instead of being smeared across the whole bin span (~+18% torque below the cliff,
+    # ~-19% above). Friction stays a plain interp of normalized values: it is applied as
+    # friction/LAF, so the LAF step cancels the STEER_MAX step and its counts arrive
+    # smooth on their own (CX-5 learned bins: 79.5 vs 80.2 counts at the cliff edges).
     if self._speed_dep_active and self._speed_dep_speed_bp:
-      new_lat_accel_factor = float(np.interp(self._last_vego, self._speed_dep_speed_bp, self._speed_dep_lat_accel_factor_bp))
+      if self._speed_dep_steer_max_schedule and self._speed_dep_laf_per_count_bp:
+        sm_bp, sm_v = self._speed_dep_steer_max_schedule
+        new_lat_accel_factor = float(np.interp(self._last_vego, self._speed_dep_speed_bp, self._speed_dep_laf_per_count_bp) *
+                                     np.interp(self._last_vego, sm_bp, sm_v))
+      else:
+        new_lat_accel_factor = float(np.interp(self._last_vego, self._speed_dep_speed_bp, self._speed_dep_lat_accel_factor_bp))
       new_fric = float(np.interp(self._last_vego, self._speed_dep_speed_bp, self._speed_dep_friction_bp))
       if new_lat_accel_factor != torque_params.latAccelFactor or new_fric != torque_params.friction:
         torque_params.latAccelFactor = new_lat_accel_factor

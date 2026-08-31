@@ -10,7 +10,12 @@ enabled, reporting what the v2 mechanisms change on real CX-5 inputs.
 
 Variants:
   v0  the previous tune (harness sanity: must track the logged outputs, which v0 drove)
-  v2  the shipped default
+  v2  the shipped default (plan-sourced setpoint jerk, differencer fallback)
+
+New metrics for the plan-sourced jerk: per-route request-vs-plan coherence (guards models
+with a desired-curvature head, where request/plan coherence is not structural), the blend
+duty cycle (fraction of active frames leaning on the differencer), and an entry-lead table
+(signed v2-vs-v0 output advance while the request rises into a turn).
 
 Open-loop caveat: the car in the log was driven by v0, so errors do not converge the way
 they would closed-loop. The comparison is still valid for setpoint/jerk shaping, friction
@@ -77,7 +82,7 @@ def run_variant(frames, fingerprint, version: int):
 
   lat_delay = CP.steerActuatorDelay
   last_ltp = None
-  keys = ('output', 'i', 'jerk', 'active', 'pressed', 'v_ego', 'logged_output')
+  keys = ('output', 'i', 'jerk', 'w', 'request', 'active', 'pressed', 'v_ego', 'logged_output')
   out = {k: [] for k in keys}
   for f in frames:
     # controlsd: global filtered params + extension limits, every frame the service is alive
@@ -88,6 +93,7 @@ def run_variant(frames, fingerprint, version: int):
       if f.ltp is not last_ltp:
         controller.extension.update_speed_dep_torque(f.ltp)
         last_ltp = f.ltp
+    controller.extension.update_model_v2(f.model)  # controlsd order: model, then lag
     controller.extension.update_lateral_lag(lat_delay)
 
     CS = SimpleNamespace(vEgo=f.v_ego, aEgo=f.a_ego, steeringAngleDeg=f.steering_angle,
@@ -99,6 +105,8 @@ def run_variant(frames, fingerprint, version: int):
     out['output'].append(-pid_log.output)
     out['i'].append(controller.pid.i)
     out['jerk'].append(pid_log.desiredLateralJerk)
+    out['w'].append(getattr(controller, 'plan_jerk_weight', 0.0))  # v0 has no plan path
+    out['request'].append(f.desired_curvature * f.v_ego ** 2)
     out['active'].append(f.active)
     out['pressed'].append(f.steering_pressed)
     out['v_ego'].append(f.v_ego)
@@ -130,6 +138,46 @@ def report(name, r, base=None):
         win.append(np.abs(r['output'][sl] - base['output'][sl]).max())
     if win:
       print(f"  release windows ({len(win)}): max |output delta| p50 {np.percentile(win, 50):.4f}  max {max(win):.4f}")
+    w_a = r['w'][act]
+    print(f"  plan jerk weight: mean {w_a.mean():.3f}  frames w<1: {(w_a < 1.0 - 1e-9).mean() * 100:.1f}%  "
+          f"frames w=0: {(w_a < 1e-9).mean() * 100:.1f}%")
+    # entry lead: signed output advance vs v0 while the request rises into a turn
+    req = r['request']
+    rising = np.abs(req)
+    crossings = np.flatnonzero((rising[:-1] < 0.5) & (rising[1:] >= 0.5) & (np.abs(req[1:]) > np.abs(req[:-1]))) + 1
+    lead = []
+    for c in crossings:
+      sl = slice(c, min(c + 50, len(req)))
+      if not (r['active'][sl].all() and (r['v_ego'][sl] > 10.0).all()):
+        continue
+      turn_sign = np.sign(req[c])
+      lead.append(((r['output'][sl] - base['output'][sl]) * turn_sign).max())
+    if lead:
+      print(f"  entry windows ({len(lead)}): signed lead vs v0 p50 {np.percentile(lead, 50):.4f}  "
+            f"p90 {np.percentile(lead, 90):.4f}  min {min(lead):.4f}")
+
+
+def coherence_check(frames, lat_delay):
+  """Request-vs-plan coherence: the plan-sourced setpoint jerk assumes the request is the
+  plan sampled at modeld's lat_action_t. That holds structurally for the plan-formula
+  action head; a model with its own desired-curvature head must still correlate or the
+  divergence blend degrades the tune to the differencer route-wide."""
+  from openpilot.selfdrive.modeld.constants import ModelConstants
+  from openpilot.sunnypilot.selfdrive.controls.lib.latcontrol_torque_v2 import PLAN_ACTION_OFFSET
+  from openpilot.selfdrive.controls.lib.drive_helpers import MIN_SPEED, MIN_STABLE_DELAY
+  t = max(lat_delay + PLAN_ACTION_OFFSET, MIN_STABLE_DELAY)
+  req, plan = [], []
+  for f in frames:
+    if not f.active or f.model is None:
+      continue
+    k = np.asarray(f.model.orientationRate.z) / np.maximum(np.asarray(f.model.velocity.x), MIN_SPEED)
+    plan.append(float(np.interp(t, ModelConstants.T_IDXS, k)) * f.v_ego ** 2)
+    req.append(f.desired_curvature * f.v_ego ** 2)
+  req, plan = np.array(req), np.array(plan)
+  corr = float(np.corrcoef(req, plan)[0, 1])
+  mad = float(np.mean(np.abs(req - plan)))
+  flag = "" if corr > 0.9 else "  ** WARNING: incoherent request/plan, tune runs on the differencer **"
+  print(f"request/plan coherence: corr {corr:.3f}  mean |request - plan| {mad:.4f} m/s^2{flag}")
 
 
 def main():
@@ -140,11 +188,12 @@ def main():
 
   segs = sorted(Path(s) for s in args.segments)
   print(f"loading {len(segs)} segments...")
-  # no variant here runs an extension override controller, so modelV2 is never read;
-  # dropping it keeps long routes from pinning every segment's rlog buffer in memory
-  frames, cp = load_frames(segs, keep_model=False)
+  # 'plan' keeps just the trajectory fields the v2 setpoint jerk reads (copied out per
+  # message), so long routes still don't pin every segment's rlog buffer in memory
+  frames, cp = load_frames(segs, keep_model='plan')
   fingerprint = cp.carFingerprint
   print(f"{len(frames)} controlsState frames, car: {fingerprint}")
+  coherence_check(frames, cp.steerActuatorDelay)
 
   results = {}
   for name, version in (('v0', 0), ('v2', 2)):

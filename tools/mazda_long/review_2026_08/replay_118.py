@@ -12,13 +12,17 @@ at -1 raw until the body dropped GEAR.BRAKE_HOLD, stock's +25 raw/frame ramp, re
 advertised and departing -- and the camera still latched the fault 80 ms in. That made it the
 fourth pulse out of four this port has ever emitted with a healthy camera, and the fourth latch.
 
-So the check here is not a grammar check any more: it is that the release now puts NO
-RESUME_UNLATCHING on the wire at all, because the body let go inside the deferral window.
+HISTORY: the deferred-pulse design this replay originally validated (zero unlatch frames,
+body released by the deferral) was falsified on car twice -- route 0000011d (0.3 s of
+silence, body still) and route 0000012c (2.0 s of +0.15 m/s2 nudge, body still through
+three stops, then answering the fallback pulse in 2-3 wire frames each time). The pulse is
+the release protocol; suppressing it only delayed every resume. The SCBS attack moved to
+the radar side instead (LEAD_TRACK_TEMPLATE's status bits carried the empty-slot signature
+under all 10 latching pulses).
 
-Caveat this replay cannot escape: the body's GEAR.BRAKE_HOLD trace is the one it recorded
-while we were pulsing at it. It shows the body releasing 30 ms after the pulse began -- well
-inside RESUME_PULSE_DEFER_T -- but it cannot prove the body would have let go with no pulse
-at all. That is the one question only a drive can answer, and the fallback exists for it.
+So the check here is grammar again: a latched release emits exactly one stock-length
+9-frame pulse, immediately at the release, command pinned at the relaxed hold until the
+body drops GEAR.BRAKE_HOLD.
 """
 import sys, os, glob
 sys.path.insert(0, "/Users/zeph/Developer/experiments/sunnypilot_proj/sunnypilot")
@@ -77,8 +81,10 @@ if __name__ == "__main__":
   pulses = [r for r in win if r[3]]
   print(f"route 118 release window: {len(win)} frames, "
         f"latched_release={ctrl.stop_and_go.latched_release}")
-  print(f"RESUME_UNLATCHING frames emitted: {len(pulses)}  "
-        f"({'PASS - nothing for the camera to fault' if not pulses else 'FAIL - still pulsing'})")
+  pinned_ok = all(c == -1 for _, c, _, u, h in win if u and h)
+  ok = len(pulses) == 9 and pinned_ok
+  print(f"RESUME_UNLATCHING frames emitted: {len(pulses)}, pinned under the latch: {pinned_ok}  "
+        f"({'PASS - one stock-length pulse at the release' if ok else 'FAIL'})")
   last = None
   for tr, c, s, u, h in win:
     key = (s, u, h)

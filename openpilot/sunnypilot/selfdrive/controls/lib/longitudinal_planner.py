@@ -25,10 +25,9 @@ LongitudinalPlanSource = custom.LongitudinalPlanSP.LongitudinalPlanSource
 class LongitudinalPlannerSP:
   def __init__(self, CP: structs.CarParams, CP_SP: structs.CarParamsSP, mpc):
     self.events_sp = EventsSP()
-    self.resolver = SpeedLimitResolver()
     self.dec = DynamicExperimentalController(CP, mpc)
-    self.scc = SmartCruiseControl()
-    self.resolver = SpeedLimitResolver()
+    self.scc = SmartCruiseControl(CP)
+    self.resolver = SpeedLimitResolver(CP)
     # pcm-op-long cars run the SLA machine here; non-pcm cars run it in card (the
     # cruise arbiter, next to the buttons and the setpoint) and get mirrored
     if CP.openpilotLongitudinalControl and CP.pcmCruise:
@@ -69,7 +68,7 @@ class LongitudinalPlannerSP:
       self.sla.update(long_enabled, long_override, v_ego, a_ego, v_cruise_cluster, self.resolver.speed_limit,
                       self.resolver.speed_limit_final_last, has_speed_limit, self.resolver.distance, self.events_sp)
     else:
-      self.sla.update(sm['carStateSP'].cruiseSession, a_ego, self.events_sp)
+      self.sla.update(sm['carStateSP'].cruiseSession, v_ego, self.resolver.distance, a_ego, self.events_sp)
 
     targets = {
       LongitudinalPlanSource.cruise: (v_cruise, a_ego),
@@ -115,6 +114,7 @@ class LongitudinalPlannerSP:
     sccVision.maxPredictedLateralAccel = float(self.scc.vision.max_pred_lat_acc)
     sccVision.enabled = self.scc.vision.is_enabled
     sccVision.active = self.scc.vision.is_active
+    sccVision.vAheadMin = float(self.scc.vision.v_ahead_min)
     # Map Control
     sccMap = smartCruiseControl.map
     sccMap.state = self.scc.map.state

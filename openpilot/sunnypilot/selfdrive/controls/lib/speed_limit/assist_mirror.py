@@ -17,11 +17,21 @@ whole window), speedLimitActive fires on announce-counter deltas — the counter
 bumped by card at 100 Hz and never un-bumps, so a 20 Hz reader cannot miss it.
 """
 from openpilot.cereal import custom
+from openpilot.selfdrive.controls.lib.drive_helpers import CONTROL_N
+from openpilot.selfdrive.modeld.constants import ModelConstants
+from openpilot.common.realtime import DT_MDL
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit import ACTIVE_STATES, ENABLED_STATES, V_CRUISE_UNSET
 from openpilot.sunnypilot.selfdrive.selfdrived.events import EventsSP
 
 EventNameSP = custom.OnroadEventSP.EventName
 SessionState = custom.LongitudinalPlanSP.SpeedLimit.AssistState
+
+# Publication shaping shared by the limiter sources (see docs/curve-and-limit-planning.md)
+_A_PUB_MIN = -2.0  # m/s2
+_PUB_JERK = 2.0  # m/s3
+# past the sign (distance 0) the decel degrades to a pull over the control horizon,
+# matching SpeedLimitAssist's active-state form
+_T_ACTIVE = float(ModelConstants.T_IDXS[CONTROL_N])
 
 
 class SpeedLimitAssistMirror:
@@ -31,6 +41,7 @@ class SpeedLimitAssistMirror:
     self.state = SessionState.disabled
     self.output_v_target = V_CRUISE_UNSET
     self.output_a_target = 0.
+    self._a_out = 0.
     self._announce_seen: int | None = None  # sync on first update (plannerd restarts)
 
   @property
@@ -41,14 +52,26 @@ class SpeedLimitAssistMirror:
   def is_active(self) -> bool:
     return self.state in ACTIVE_STATES
 
-  def update(self, session, a_ego: float, events_sp: EventsSP) -> None:
+  def update(self, session, v_ego: float, distance: float, a_ego: float, events_sp: EventsSP) -> None:
     self.state = session.state
     # The arbiter publishes vCap as a real target, a frozen hold, or V_CRUISE_UNSET —
     # never 0. A 0 can only be capnp's float default from a not-yet-received carStateSP,
     # and without this guard it would win the plan min() as a full-stop target.
     v_cap = float(session.vCap)
     self.output_v_target = v_cap if v_cap > 0.0 else V_CRUISE_UNSET
-    self.output_a_target = a_ego
+
+    # The decel actually required to arrive at the cap: this is what keys ICBM's overshoot
+    # gap on stock ACC, so a_ego here means map limits never brake the real car. The
+    # resolver's distance lives in plannerd on both paths, so compute locally; the card
+    # wire stays unchanged. Ramped: the plan aTarget seeds mpc.set_cur_state.
+    if self.is_active and 0.0 < v_cap < v_ego:
+      d_eff = max(distance, v_ego * _T_ACTIVE)
+      a_des = max((v_cap ** 2 - v_ego ** 2) / (2. * d_eff), _A_PUB_MIN)
+      step = _PUB_JERK * DT_MDL
+      self._a_out = min(max(a_des, self._a_out - step), self._a_out + step)
+    else:
+      self._a_out = a_ego
+    self.output_a_target = self._a_out
 
     if self.state == SessionState.preActive:
       events_sp.add(EventNameSP.speedLimitPreActive)

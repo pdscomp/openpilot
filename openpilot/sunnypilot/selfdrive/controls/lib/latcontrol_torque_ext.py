@@ -5,6 +5,8 @@ This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
 
+import numpy as np
+
 from openpilot.sunnypilot.selfdrive.controls.lib.nnlc.nnlc import NeuralNetworkLateralControl
 from openpilot.sunnypilot.selfdrive.controls.lib.latcontrol_torque_ext_override import LatControlTorqueExtOverride
 
@@ -112,6 +114,19 @@ class LatControlTorqueExt(NeuralNetworkLateralControl, LatControlTorqueExtOverri
     self._speed_dep_speed_bp = speed_bp
     self._speed_dep_lat_accel_factor_bp = [factors[i] if valid_bp[i] else fallback_factors[i] for i in range(len(speed_bp))]
     self._speed_dep_friction_bp = [frictions[i] if valid_bp[i] else fallback_frictions[i] for i in range(len(speed_bp))]
+
+    # Per-count LAF table for platforms with a speed-dependent STEER_MAX (see the
+    # per-frame interp in update_override_torque_params). Learned and seed values alike
+    # were measured under this car's schedule, so one conversion covers both. Rebuilt on
+    # every torqued message: bin validity flips move values between learned and fallback.
+    schedule = cfg.get('steer_max_schedule')
+    self._speed_dep_steer_max_schedule = schedule
+    if schedule:
+      sm_bp, sm_v = schedule
+      self._speed_dep_laf_per_count_bp = [laf / float(np.interp(c, sm_bp, sm_v))
+                                          for laf, c in zip(self._speed_dep_lat_accel_factor_bp, speed_bp, strict=True)]
+    else:
+      self._speed_dep_laf_per_count_bp = []
 
     # Set global filtered values for PID limits baseline. Per-frame speed-dep
     # interpolation in update_override_torque_params overwrites on next frame.

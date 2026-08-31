@@ -14,6 +14,7 @@ from openpilot.common.params import Params
 from openpilot.common.realtime import DT_MDL
 from openpilot.sunnypilot import PARAMS_UPDATE_PERIOD, get_sanitize_int_param
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit import LIMIT_MAX_MAP_DATA_AGE, LIMIT_ADAPT_ACC
+from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.limits import COMMIT_FRAC, get_planning_limits
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.common import Policy, OffsetType
 
 SpeedLimitSource = custom.LongitudinalPlanSP.SpeedLimit.Source
@@ -33,9 +34,12 @@ class SpeedLimitResolver:
   source: custom.LongitudinalPlanSP.SpeedLimit.Source
   speed_limit_offset: float
 
-  def __init__(self):
+  def __init__(self, CP=None):
     self.params = Params()
     self.frame = -1
+    # swap to the upcoming lower limit once we are inside the braking distance the
+    # platform can actually deliver; the fixed LIMIT_ADAPT_ACC remains the no-CP fallback
+    self._adapt_acc = -COMMIT_FRAC * get_planning_limits(CP).a_budget if CP is not None else LIMIT_ADAPT_ACC
 
     self._gps_location_service = get_gps_location_service(self.params)
     self.limit_solutions = {}  # Store for speed limit solutions from different sources
@@ -144,8 +148,8 @@ class SpeedLimitResolver:
 
     # FIXME-SP: this is not working as expected
     if 0. < next_speed_limit < self.v_ego:
-      adapt_time = (next_speed_limit - self.v_ego) / LIMIT_ADAPT_ACC
-      adapt_distance = self.v_ego * adapt_time + 0.5 * LIMIT_ADAPT_ACC * adapt_time ** 2
+      adapt_time = (next_speed_limit - self.v_ego) / self._adapt_acc
+      adapt_distance = self.v_ego * adapt_time + 0.5 * self._adapt_acc * adapt_time ** 2
 
       if distance_to_speed_limit_ahead <= adapt_distance:
         self.limit_solutions[SpeedLimitSource.map] = next_speed_limit
