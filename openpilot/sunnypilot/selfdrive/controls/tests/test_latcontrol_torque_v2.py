@@ -89,15 +89,17 @@ class TestLatControlTorqueV2:
     v_ego = 15.0
     desired = 2e-3
     # prime v2's curvature buffer with the constant plan while inactive, so the lead term is
-    # zero from the first engaged frame; a zero measurement leaves both rate filters at rest
+    # zero from the first engaged frame; the on-request measurement leaves both rate filters at rest.
+    # (v0 identity holds only on the zero-error manifold: v2's low-speed error boost scales any
+    # nonzero error at every speed; that delta is pinned in test_low_speed_error_boost.)
     for _ in range(DELAY_FRAMES + 10):
-      step(v0, make_cs(v_ego), desired, active=False)
-      step(v2, make_cs(v_ego), desired, active=False)
+      step(v0, make_cs(v_ego, desired * v_ego ** 2), desired, active=False)
+      step(v2, make_cs(v_ego, desired * v_ego ** 2), desired, active=False)
     for i in range(300):
-      measured = 1.5e-3 * math.sin(i / 80)
-      out0, _, log0 = v0.update(True, make_cs(v_ego, measured * v_ego ** 2), VM, LP, False, desired, None, False, LAT_DELAY)
-      out2, _, log2 = v2.update(True, make_cs(v_ego, measured * v_ego ** 2), VM, LP, False, desired, None, False, LAT_DELAY)
+      out0, _, log0 = v0.update(True, make_cs(v_ego, desired * v_ego ** 2), VM, LP, False, desired, None, False, LAT_DELAY)
+      out2, _, log2 = v2.update(True, make_cs(v_ego, desired * v_ego ** 2), VM, LP, False, desired, None, False, LAT_DELAY)
       assert log2.desiredLateralAccel == pytest.approx(log0.desiredLateralAccel, abs=1e-6), f"frame {i}"
+      assert log2.error == pytest.approx(0.0, abs=1e-9), f"frame {i}"
       assert out2 == pytest.approx(out0, abs=1e-9), f"frame {i}"
     assert log0.version == 0
     assert log2.version == 2
@@ -580,20 +582,21 @@ class TestPlanJerkSource:
   Every test above this class runs with no model attached and pins the fallback path."""
 
   def test_coherent_flat_plan_matches_v0(self, params):
-    """A flat plan matching a flat request is the quiescent case on the plan path (w=1,
-    plan jerk 0): v2 must still be frame-for-frame identical to v0."""
+    """A flat plan matching a flat request with the wheel on the request is the quiescent case
+    on the plan path (w=1, plan jerk 0, zero tracking error): v2 must still be frame-for-frame
+    identical to v0. (v2's low-speed error boost scales any nonzero error at every speed, so
+    this identity only holds on the zero-error manifold.)"""
     v0, v2 = make_pair()
     v_ego, k = 15.0, 2e-3
     for i in range(DELAY_FRAMES + 10):
-      step(v0, make_cs(v_ego), k, active=False)
+      step(v0, make_cs(v_ego, k * v_ego ** 2), k, active=False)
       v2.extension.update_model_v2(make_plan_model(i // 5, k, v_plan=v_ego))
-      step(v2, make_cs(v_ego), k, active=False)
+      step(v2, make_cs(v_ego, k * v_ego ** 2), k, active=False)
     for i in range(300):
-      measured = 1.5e-3 * math.sin(i / 80)
       if i % 5 == 0:
         v2.extension.update_model_v2(make_plan_model(1000 + i, k, v_plan=v_ego))
-      out0, _, log0 = v0.update(True, make_cs(v_ego, measured * v_ego ** 2), VM, LP, False, k, None, False, LAT_DELAY)
-      out2, _, log2 = v2.update(True, make_cs(v_ego, measured * v_ego ** 2), VM, LP, False, k, None, False, LAT_DELAY)
+      out0, _, log0 = v0.update(True, make_cs(v_ego, k * v_ego ** 2), VM, LP, False, k, None, False, LAT_DELAY)
+      out2, _, log2 = v2.update(True, make_cs(v_ego, k * v_ego ** 2), VM, LP, False, k, None, False, LAT_DELAY)
       assert out2 == pytest.approx(out0, abs=1e-9), f"frame {i}"
     assert v2.plan_jerk_weight == 1.0
 

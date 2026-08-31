@@ -48,6 +48,15 @@ STEER_RELEASE_I_DECAY = 0.8  # one-shot integrator decay on steering-press relea
 # expects on release is immediate.
 RELEASE_ERROR_RAMP_T = 0.3  # s
 
+# StarPilot's low-speed error boost (their LOW_SPEED_X/Y, verbatim): the PID error is
+# scaled by 1 + lsf/kp, ~+45% at 5 m/s fading to ~+3% at 30, closing low-speed tracking
+# error faster than the KP ladder alone. Normalizing by the scheduled KP keeps the added
+# proportional authority roughly absolute across the ladder instead of compounding with
+# it. Applied to the PID error only — the friction input keeps the unboosted error, so
+# the stiction kick is unchanged (replay-validated orthogonal, 2026-08-27).
+LOW_SPEED_X = [0, 10, 20, 30]  # m/s
+LOW_SPEED_Y = [12, 10.5, 8, 5]
+
 # TI cars pair this boost with the capped kp ladder (latcontrol_torque_v0's
 # TI_LOW_SPEED_KP_CAP): effective low-speed gain is kp + (lsf/v)^2, and with kp=4 the
 # quadratic term dominates — 0-10 kph still spent 17% of active time at full rail on the
