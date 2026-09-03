@@ -25,6 +25,8 @@ class CarSpecificEventsSP:
 
     self.low_speed_alert = False
     self.ti_not_ready_frames = 0
+    self.alpha_long_pending_frames = 0
+    self.alpha_long_toast_shown = False
 
   def update(self, CS: structs.CarState, CS_SP: custom.CarStateSP, events: Events):
     events_sp = EventsSP()
@@ -61,5 +63,17 @@ class CarSpecificEventsSP:
         self.ti_not_ready_frames = 0
       if self.ti_not_ready_frames > 200:  # ~2 s above 36 kph
         events_sp.add(EventNameSP.torqueInterceptorNotReady)
+
+      # The alpha-long radar teardown needs a stop with stock cruise off. While it is
+      # still pending the car drives with cruise/lateral locked out and no hint why;
+      # say it once per drive instead of leaving the driver guessing (route
+      # 00000026--5ed2c94d05: enabled never became possible on a drive-off boot).
+      if CS_SP.alphaLongTakeoverPending and not self.alpha_long_toast_shown:
+        self.alpha_long_pending_frames += 1
+      else:
+        self.alpha_long_pending_frames = 0
+      if self.alpha_long_pending_frames > 100:  # ~1 s
+        self.alpha_long_toast_shown = True
+        events_sp.add(EventNameSP.alphaLongTakeoverPending)
 
     return events_sp

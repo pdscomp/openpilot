@@ -18,8 +18,8 @@ def _cs(vEgo: float) -> structs.CarState:
   return structs.CarState(vEgo=vEgo)
 
 
-def _sp(ready: bool):
-  return custom.CarStateSP.new_message(torqueInterceptorReady=ready)
+def _sp(ready: bool, pending: bool = False):
+  return custom.CarStateSP.new_message(torqueInterceptorReady=ready, alphaLongTakeoverPending=pending)
 
 
 def test_ti_not_ready_event_raises_when_unhealthy_at_speed_sustained():
@@ -56,3 +56,19 @@ def test_ti_not_ready_counter_resets_on_recovery():
   for _ in range(200):
     assert not cse.update(_cs(20.0), _sp(False), Events()).has(EventNameSP.torqueInterceptorNotReady)
   assert cse.update(_cs(20.0), _sp(False), Events()).has(EventNameSP.torqueInterceptorNotReady)
+
+
+def test_alpha_long_takeover_pending_toasts_once_per_drive():
+  cse = CarSpecificEventsSP(_mazda_cp(ti=True), structs.CarParamsSP())
+  for _ in range(100):
+    assert not cse.update(_cs(15.0), _sp(True, True), Events()).has(EventNameSP.alphaLongTakeoverPending)
+  assert cse.update(_cs(15.0), _sp(True, True), Events()).has(EventNameSP.alphaLongTakeoverPending)
+  # one-shot: never fires again while still pending
+  for _ in range(300):
+    assert not cse.update(_cs(15.0), _sp(True, True), Events()).has(EventNameSP.alphaLongTakeoverPending)
+
+
+def test_alpha_long_takeover_pending_stays_silent_when_clear():
+  cse = CarSpecificEventsSP(_mazda_cp(ti=True), structs.CarParamsSP())
+  for _ in range(300):
+    assert not cse.update(_cs(15.0), _sp(True, False), Events()).has(EventNameSP.alphaLongTakeoverPending)
