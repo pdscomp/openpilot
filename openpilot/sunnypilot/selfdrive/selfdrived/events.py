@@ -128,15 +128,18 @@ EVENTS_SP: dict[int, dict[str, Alert | AlertCallbackType]] = {
     ET.NO_ENTRY: NoEntryAlert("Brake Hold Active"),
   },
 
-  EventNameSP.torqueInterceptorNotReady: {
-    ET.PERMANENT: NormalPermanentAlert("Torque Interceptor Not Ready", "Check interceptor wiring and ODB2 power"),
-    ET.NO_ENTRY: NoEntryAlert("Torque Interceptor Not Ready"),
-  },
-
   EventNameSP.alphaLongTakeoverPending: {
     ET.PERMANENT: Alert(
       "Alpha Long Waiting",
       "Stop With Cruise Off to Enable",
+      AlertStatus.normal, AlertSize.mid,
+      Priority.LOW, VisualAlert.none, AudibleAlert.none, 5.),
+  },
+
+  EventNameSP.alphaLongTakeoverInitializing: {
+    ET.PERMANENT: Alert(
+      "Alpha Long Initializing",
+      "Keep Stopped With Cruise Off",
       AlertStatus.normal, AlertSize.mid,
       Priority.LOW, VisualAlert.none, AudibleAlert.none, 5.),
   },

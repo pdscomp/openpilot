@@ -9,7 +9,6 @@ from openpilot.cereal import log, custom
 from opendbc.car import structs
 
 from opendbc.car.chrysler.values import RAM_DT
-from opendbc.car.mazda.values import MazdaFlags
 from openpilot.selfdrive.selfdrived.events import Events
 from openpilot.sunnypilot.selfdrive.selfdrived.events import EventsSP
 
@@ -24,7 +23,8 @@ class CarSpecificEventsSP:
     self.CP_SP = CP_SP
 
     self.low_speed_alert = False
-    self.ti_not_ready_frames = 0
+    self.alpha_long_initializing_frames = 0
+    self.alpha_long_initializing_toast_shown = False
     self.alpha_long_pending_frames = 0
     self.alpha_long_toast_shown = False
 
@@ -53,16 +53,13 @@ class CarSpecificEventsSP:
             events.remove(EventName.resumeRequired)
 
     elif self.CP.brand == 'mazda':
-      ti = bool(self.CP.flags & MazdaFlags.TORQUE_INTERCEPTOR)
-      # TI routinely drops out of RUN at low speed/standstill (steering-current
-      # self-protection) and recovers on roll-out; only a sustained not-ready at
-      # real speed is a genuine fault worth naming.
-      if ti and not CS_SP.torqueInterceptorReady and CS.vEgo > 10:
-        self.ti_not_ready_frames += 1
+      if CS_SP.alphaLongTakeoverInitializing and not self.alpha_long_initializing_toast_shown:
+        self.alpha_long_initializing_frames += 1
       else:
-        self.ti_not_ready_frames = 0
-      if self.ti_not_ready_frames > 200:  # ~2 s above 36 kph
-        events_sp.add(EventNameSP.torqueInterceptorNotReady)
+        self.alpha_long_initializing_frames = 0
+      if self.alpha_long_initializing_frames > 20:  # ~200 ms
+        self.alpha_long_initializing_toast_shown = True
+        events_sp.add(EventNameSP.alphaLongTakeoverInitializing)
 
       # The alpha-long radar teardown needs a stop with stock cruise off. While it is
       # still pending the car drives with cruise/lateral locked out and no hint why;
